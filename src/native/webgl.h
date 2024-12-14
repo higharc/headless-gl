@@ -10,9 +10,12 @@
 #include "nan.h"
 #include <v8.h>
 
-#include <EGL/egl.h>
-#include <GLES2/gl2.h>
-#include <GLES2/gl2ext.h>
+#define EGL_EGL_PROTOTYPES 0
+#define GL_GLES_PROTOTYPES 0
+
+#include "angle-loader/egl_loader.h"
+#include "angle-loader/gles_loader.h"
+#include "SharedLibrary.h"
 
 enum GLObjectType {
   GLOBJECT_TYPE_BUFFER,
@@ -39,7 +42,7 @@ struct WebGLRenderingContext : public node::ObjectWrap {
   static bool       HAS_DISPLAY;
   static EGLDisplay DISPLAY;
 
-
+  SharedLibrary eglLibrary;
   EGLContext context;
   EGLConfig  config;
   EGLSurface surface;
@@ -272,10 +275,6 @@ struct WebGLRenderingContext : public node::ObjectWrap {
   static NAN_METHOD(CreateVertexArrayOES);
   static NAN_METHOD(DeleteVertexArrayOES);
   static NAN_METHOD(IsVertexArrayOES);
-
-  void initPointers();
-
-  #include "procs.h"
 };
 
 #endif
