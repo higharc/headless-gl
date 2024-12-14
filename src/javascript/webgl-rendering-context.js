@@ -1213,15 +1213,15 @@ class WebGLRenderingContext extends NativeWebGLRenderingContext {
       exts.push('OES_texture_float_linear')
     }
 
-    if (supportedExts.indexOf('EXT_draw_buffers') >= 0) {
+    if (supportedExts.indexOf('GL_EXT_draw_buffers') >= 0) {
       exts.push('WEBGL_draw_buffers')
     }
 
-    if (supportedExts.indexOf('EXT_blend_minmax') >= 0) {
+    if (supportedExts.indexOf('GL_EXT_blend_minmax') >= 0) {
       exts.push('EXT_blend_minmax')
     }
 
-    if (supportedExts.indexOf('EXT_texture_filter_anisotropic') >= 0) {
+    if (supportedExts.indexOf('GL_EXT_texture_filter_anisotropic') >= 0) {
       exts.push('EXT_texture_filter_anisotropic')
     }
 
