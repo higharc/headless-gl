@@ -32,7 +32,7 @@ std::string GetPath(HMODULE module)
 
 std::string GetModulePath(void *moduleOrSymbol)
 {
-    HMODULE module               = nullptr;
+    HMODULE module = nullptr;
     if (GetModuleHandleExW(
             GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
             reinterpret_cast<LPCWSTR>(moduleOrSymbol), &module))
@@ -64,6 +64,6 @@ std::string StripFilenameFromPath(const std::string &path)
 std::string GetModuleDirectory()
 {
     static int placeholderSymbol = 0;
-    std::string moduleName       = GetModulePath(&placeholderSymbol);
+    std::string moduleName = GetModulePath(&placeholderSymbol);
     return StripFilenameFromPath(moduleName);
 }

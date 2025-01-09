@@ -10,13 +10,14 @@
 #include <dlfcn.h>
 #endif
 
-inline std::string GetSharedLibraryExtension() {
+inline std::string GetSharedLibraryExtension()
+{
 #ifdef _WIN32
-    return ".dll";   // Windows
+    return ".dll"; // Windows
 #elif __APPLE__
     return ".dylib"; // OSX
 #elif __linux__
-    return ".so";    // Linux
+    return ".so"; // Linux
 #else
 #error Unsupported platform
 #endif
@@ -24,11 +25,13 @@ inline std::string GetSharedLibraryExtension() {
 
 std::string GetModuleDirectory();
 
-class SharedLibrary {
+class SharedLibrary
+{
 public:
     SharedLibrary() {}
 
-    bool open(const std::string& libraryPath) {
+    bool open(const std::string &libraryPath)
+    {
         const std::string libraryPathWithExt = GetModuleDirectory() + "/" + libraryPath + GetSharedLibraryExtension();
 #ifdef _WIN32
         handle = LoadLibraryA(libraryPathWithExt.c_str());
@@ -38,8 +41,10 @@ public:
         return handle != nullptr;
     }
 
-    ~SharedLibrary() {
-        if (handle) {
+    ~SharedLibrary()
+    {
+        if (handle)
+        {
 #ifdef _WIN32
             FreeLibrary(static_cast<HMODULE>(handle));
 #else
@@ -49,7 +54,8 @@ public:
     }
 
     template <typename Func>
-    Func getFunction(const std::string& functionName) {
+    Func getFunction(const std::string &functionName)
+    {
 #ifdef _WIN32
         auto func = reinterpret_cast<Func>(GetProcAddress(static_cast<HMODULE>(handle), functionName.c_str()));
 #else
@@ -59,5 +65,5 @@ public:
     }
 
 private:
-    void* handle = nullptr;
+    void *handle = nullptr;
 };
