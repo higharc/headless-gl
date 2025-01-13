@@ -1,5 +1,3 @@
-const bits = require('bit-twiddle')
-const tokenize = require('glsl-tokenizer/string')
 const HEADLESS_VERSION = require('../../package.json').version
 const { gl, NativeWebGLRenderingContext, NativeWebGL } = require('./native-gl')
 const { getANGLEInstancedArrays } = require('./extensions/angle-instanced-arrays')
@@ -27,7 +25,6 @@ const {
   isTypedArray,
   unpackTypedArray,
   convertPixels,
-  checkFormat,
   validCubeTarget
 } = require('./utils')
 
@@ -160,62 +157,7 @@ class WebGLRenderingContext extends NativeWebGLRenderingContext {
   }
 
   _checkShaderSource (shader) {
-    const source = shader._source
-    const tokens = tokenize(source)
-
-    let errorStatus = false
-    const errorLog = []
-
-    for (let i = 0; i < tokens.length; ++i) {
-      const tok = tokens[i]
-      switch (tok.type) {
-        case 'ident':
-          if (!this._validGLSLIdentifier(tok.data)) {
-            errorStatus = true
-            errorLog.push(tok.line + ':' + tok.column +
-              ' invalid identifier - ' + tok.data)
-          }
-          break
-        case 'preprocessor': {
-          const bodyToks = tokenize(tok.data.match(/^\s*#\s*(.*)$/)[1])
-          for (let j = 0; j < bodyToks.length; ++j) {
-            const btok = bodyToks[j]
-            if (btok.type === 'ident' || btok.type === undefined) {
-              if (!this._validGLSLIdentifier(btok.data)) {
-                errorStatus = true
-                errorLog.push(tok.line + ':' + btok.column +
-                  ' invalid identifier - ' + btok.data)
-              }
-            }
-          }
-          break
-        }
-        case 'keyword':
-          switch (tok.data) {
-            case 'do':
-              errorStatus = true
-              errorLog.push(tok.line + ':' + tok.column + ' do not supported')
-              break
-          }
-          break
-        case 'builtin':
-          switch (tok.data) {
-            case 'dFdx':
-            case 'dFdy':
-            case 'fwidth':
-              if (!this._extensions.oes_standard_derivatives) {
-                errorStatus = true
-                errorLog.push(tok.line + ':' + tok.column + ' ' + tok.data + ' not supported')
-              }
-              break
-          }
-      }
-    }
-
-    if (errorStatus) {
-      shader._compileInfo = errorLog.join('\n')
-    }
-    return !errorStatus
+    return true
   }
 
   _checkStencilState () {
@@ -351,7 +293,7 @@ class WebGLRenderingContext extends NativeWebGLRenderingContext {
 
   _fixupLink (program) {
     if (!super.getProgramParameter(program._, gl.LINK_STATUS)) {
-      program._linkInfoLog = super.getProgramInfoLog(program)
+      program._linkInfoLog = super.getProgramInfoLog(program._)
       return false
     }
 
@@ -400,12 +342,6 @@ class WebGLRenderingContext extends NativeWebGLRenderingContext {
   }
 
   _framebufferOk () {
-    const framebuffer = this._activeFramebuffer
-    if (framebuffer &&
-      this._preCheckFramebufferStatus(framebuffer) !== gl.FRAMEBUFFER_COMPLETE) {
-      this.setError(gl.INVALID_FRAMEBUFFER_OPERATION)
-      return false
-    }
     return true
   }
 
@@ -453,113 +389,6 @@ class WebGLRenderingContext extends NativeWebGLRenderingContext {
     }
     this.setError(gl.INVALID_ENUM)
     return null
-  }
-
-  _preCheckFramebufferStatus (framebuffer) {
-    const attachments = framebuffer._attachments
-    const width = []
-    const height = []
-    const depthAttachment = attachments[gl.DEPTH_ATTACHMENT]
-    const depthStencilAttachment = attachments[gl.DEPTH_STENCIL_ATTACHMENT]
-    const stencilAttachment = attachments[gl.STENCIL_ATTACHMENT]
-
-    if ((depthStencilAttachment && (stencilAttachment || depthAttachment)) ||
-      (stencilAttachment && depthAttachment)) {
-      return gl.FRAMEBUFFER_UNSUPPORTED
-    }
-
-    const colorAttachments = this._getColorAttachments()
-    let colorAttachmentCount = 0
-    for (const attachmentEnum in attachments) {
-      if (attachments[attachmentEnum] && colorAttachments.indexOf(attachmentEnum * 1) !== -1) {
-        colorAttachmentCount++
-      }
-    }
-    if (colorAttachmentCount === 0) {
-      return gl.FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT
-    }
-
-    if (depthStencilAttachment instanceof WebGLTexture) {
-      return gl.FRAMEBUFFER_UNSUPPORTED
-    } else if (depthStencilAttachment instanceof WebGLRenderbuffer) {
-      if (depthStencilAttachment._format !== gl.DEPTH_STENCIL) {
-        return gl.FRAMEBUFFER_INCOMPLETE_ATTACHMENT
-      }
-      width.push(depthStencilAttachment._width)
-      height.push(depthStencilAttachment._height)
-    }
-
-    if (depthAttachment instanceof WebGLTexture) {
-      return gl.FRAMEBUFFER_UNSUPPORTED
-    } else if (depthAttachment instanceof WebGLRenderbuffer) {
-      if (depthAttachment._format !== gl.DEPTH_COMPONENT16) {
-        return gl.FRAMEBUFFER_INCOMPLETE_ATTACHMENT
-      }
-      width.push(depthAttachment._width)
-      height.push(depthAttachment._height)
-    }
-
-    if (stencilAttachment instanceof WebGLTexture) {
-      return gl.FRAMEBUFFER_UNSUPPORTED
-    } else if (stencilAttachment instanceof WebGLRenderbuffer) {
-      if (stencilAttachment._format !== gl.STENCIL_INDEX8) {
-        return gl.FRAMEBUFFER_INCOMPLETE_ATTACHMENT
-      }
-      width.push(stencilAttachment._width)
-      height.push(stencilAttachment._height)
-    }
-
-    let colorAttached = false
-    for (let i = 0; i < colorAttachments.length; ++i) {
-      const colorAttachment = attachments[colorAttachments[i]]
-      if (colorAttachment instanceof WebGLTexture) {
-        if (colorAttachment._format !== gl.RGBA ||
-          !(colorAttachment._type === gl.UNSIGNED_BYTE || colorAttachment._type === gl.FLOAT)) {
-          return gl.FRAMEBUFFER_INCOMPLETE_ATTACHMENT
-        }
-        colorAttached = true
-        const level = framebuffer._attachmentLevel[gl.COLOR_ATTACHMENT0]
-        width.push(colorAttachment._levelWidth[level])
-        height.push(colorAttachment._levelHeight[level])
-      } else if (colorAttachment instanceof WebGLRenderbuffer) {
-        const format = colorAttachment._format
-        if (format !== gl.RGBA4 &&
-          format !== gl.RGB565 &&
-          format !== gl.RGB5_A1) {
-          return gl.FRAMEBUFFER_INCOMPLETE_ATTACHMENT
-        }
-        colorAttached = true
-        width.push(colorAttachment._width)
-        height.push(colorAttachment._height)
-      }
-    }
-
-    if (!colorAttached &&
-      !stencilAttachment &&
-      !depthAttachment &&
-      !depthStencilAttachment) {
-      return gl.FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT
-    }
-
-    if (width.length <= 0 || height.length <= 0) {
-      return gl.FRAMEBUFFER_INCOMPLETE_ATTACHMENT
-    }
-
-    for (let i = 1; i < width.length; ++i) {
-      if (width[i - 1] !== width[i] ||
-        height[i - 1] !== height[i]) {
-        return gl.FRAMEBUFFER_INCOMPLETE_DIMENSIONS
-      }
-    }
-
-    if (width[0] === 0 || height[0] === 0) {
-      return gl.FRAMEBUFFER_INCOMPLETE_ATTACHMENT
-    }
-
-    framebuffer._width = width[0]
-    framebuffer._height = height[0]
-
-    return gl.FRAMEBUFFER_COMPLETE
   }
 
   _isConstantBlendFunc (factor) {
@@ -697,55 +526,6 @@ class WebGLRenderingContext extends NativeWebGLRenderingContext {
     }
   }
 
-  _updateFramebufferAttachments (framebuffer) {
-    const prevStatus = framebuffer._status
-    const attachments = this._getAttachments()
-    framebuffer._status = this._preCheckFramebufferStatus(framebuffer)
-    if (framebuffer._status !== gl.FRAMEBUFFER_COMPLETE) {
-      if (prevStatus === gl.FRAMEBUFFER_COMPLETE) {
-        for (let i = 0; i < attachments.length; ++i) {
-          const attachmentEnum = attachments[i]
-          super.framebufferTexture2D(
-            gl.FRAMEBUFFER,
-            attachmentEnum,
-            framebuffer._attachmentFace[attachmentEnum],
-            0,
-            framebuffer._attachmentLevel[attachmentEnum])
-        }
-      }
-      return
-    }
-
-    for (let i = 0; i < attachments.length; ++i) {
-      const attachmentEnum = attachments[i]
-      super.framebufferTexture2D(
-        gl.FRAMEBUFFER,
-        attachmentEnum,
-        framebuffer._attachmentFace[attachmentEnum],
-        0,
-        framebuffer._attachmentLevel[attachmentEnum])
-    }
-
-    for (let i = 0; i < attachments.length; ++i) {
-      const attachmentEnum = attachments[i]
-      const attachment = framebuffer._attachments[attachmentEnum]
-      if (attachment instanceof WebGLTexture) {
-        super.framebufferTexture2D(
-          gl.FRAMEBUFFER,
-          attachmentEnum,
-          framebuffer._attachmentFace[attachmentEnum],
-          attachment._ | 0,
-          framebuffer._attachmentLevel[attachmentEnum])
-      } else if (attachment instanceof WebGLRenderbuffer) {
-        super.framebufferRenderbuffer(
-          gl.FRAMEBUFFER,
-          attachmentEnum,
-          gl.RENDERBUFFER,
-          attachment._ | 0)
-      }
-    }
-  }
-
   _validBlendFunc (factor) {
     return factor === gl.ZERO ||
       factor === gl.ONE ||
@@ -832,15 +612,8 @@ class WebGLRenderingContext extends NativeWebGLRenderingContext {
     }
   }
 
-  _wrapShader (type, source) { // eslint-disable-line
-    // the gl implementation seems to define `GL_OES_standard_derivatives` even when the extension is disabled
-    // this behaviour causes one conformance test ('GL_OES_standard_derivatives defined in shaders when extension is disabled') to fail
-    // by `undef`ing `GL_OES_standard_derivatives`, this appears to solve the issue
-    if (!this._extensions.oes_standard_derivatives && /#ifdef\s+GL_OES_standard_derivatives/.test(source)) {
-      source = '#undef GL_OES_standard_derivatives\n' + source
-    }
-
-    return this._extensions.webgl_draw_buffers ? source : '#define gl_MaxDrawBuffers 1\n' + source // eslint-disable-line
+  _wrapShader (type, source) {
+    return source
   }
 
   _beginAttrib0Hack () {
@@ -938,20 +711,23 @@ class WebGLRenderingContext extends NativeWebGLRenderingContext {
     if (!checkObject(framebuffer)) {
       throw new TypeError('bindFramebuffer(GLenum, WebGLFramebuffer)')
     }
-    if (target !== gl.FRAMEBUFFER) {
-      this.setError(gl.INVALID_ENUM)
-      return
-    }
+    let error = 0
     if (!framebuffer) {
+      this._saveError()
       super.bindFramebuffer(
-        gl.FRAMEBUFFER,
+        target,
         this._drawingBuffer._framebuffer)
+      error = super.getError()
+      this._restoreError(error)
     } else if (framebuffer._pendingDelete) {
       return
     } else if (this._checkWrapper(framebuffer, WebGLFramebuffer)) {
+      this._saveError()
       super.bindFramebuffer(
-        gl.FRAMEBUFFER,
+        target,
         framebuffer._ | 0)
+      error = super.getError()
+      this._restoreError(error)
     } else {
       return
     }
@@ -965,9 +741,8 @@ class WebGLRenderingContext extends NativeWebGLRenderingContext {
         framebuffer._refCount += 1
       }
     }
-    this._activeFramebuffer = framebuffer
-    if (framebuffer) {
-      this._updateFramebufferAttachments(framebuffer)
+    if (error === 0) {
+      this._activeFramebuffer = framebuffer
     }
   }
 
@@ -1051,11 +826,6 @@ class WebGLRenderingContext extends NativeWebGLRenderingContext {
       throw new TypeError('bindTexture(GLenum, WebGLTexture)')
     }
 
-    if (!this._validTextureTarget(target)) {
-      this.setError(gl.INVALID_ENUM)
-      return
-    }
-
     // Get texture id
     let textureId = 0
     if (!texture) {
@@ -1065,16 +835,8 @@ class WebGLRenderingContext extends NativeWebGLRenderingContext {
       // Special case: error codes for deleted textures don't get set for some dumb reason
       return
     } else if (this._checkWrapper(texture, WebGLTexture)) {
-      // Check binding mode of texture
-      if (texture._binding && texture._binding !== target) {
-        this.setError(gl.INVALID_OPERATION)
-        return
-      }
       texture._binding = target
-
-      if (texture._complete) {
-        textureId = texture._ | 0
-      }
+      textureId = texture._ | 0
     } else {
       return
     }
@@ -1421,17 +1183,7 @@ class WebGLRenderingContext extends NativeWebGLRenderingContext {
   }
 
   checkFramebufferStatus (target) {
-    if (target !== gl.FRAMEBUFFER) {
-      this.setError(gl.INVALID_ENUM)
-      return 0
-    }
-
-    const framebuffer = this._activeFramebuffer
-    if (!framebuffer) {
-      return gl.FRAMEBUFFER_COMPLETE
-    }
-
-    return this._preCheckFramebufferStatus(framebuffer)
+    return super.checkFramebufferStatus(target)
   }
 
   clear (mask) {
@@ -1491,31 +1243,6 @@ class WebGLRenderingContext extends NativeWebGLRenderingContext {
     height |= 0
     border |= 0
 
-    const texture = this._getTexImage(target)
-    if (!texture) {
-      this.setError(gl.INVALID_OPERATION)
-      return
-    }
-
-    if (internalFormat !== gl.RGBA &&
-      internalFormat !== gl.RGB &&
-      internalFormat !== gl.ALPHA &&
-      internalFormat !== gl.LUMINANCE &&
-      internalFormat !== gl.LUMINANCE_ALPHA) {
-      this.setError(gl.INVALID_ENUM)
-      return
-    }
-
-    if (level < 0 || width < 0 || height < 0 || border !== 0) {
-      this.setError(gl.INVALID_VALUE)
-      return
-    }
-
-    if (level > 0 && !(bits.isPow2(width) && bits.isPow2(height))) {
-      this.setError(gl.INVALID_VALUE)
-      return
-    }
-
     this._saveError()
     super.copyTexImage2D(
       target,
@@ -1530,6 +1257,7 @@ class WebGLRenderingContext extends NativeWebGLRenderingContext {
     this._restoreError(error)
 
     if (error === gl.NO_ERROR) {
+      const texture = this._getTexImage(target)
       texture._levelWidth[level] = width
       texture._levelHeight[level] = height
       texture._format = gl.RGBA
@@ -1550,17 +1278,6 @@ class WebGLRenderingContext extends NativeWebGLRenderingContext {
     y |= 0
     width |= 0
     height |= 0
-
-    const texture = this._getTexImage(target)
-    if (!texture) {
-      this.setError(gl.INVALID_OPERATION)
-      return
-    }
-
-    if (width < 0 || height < 0 || xoffset < 0 || yoffset < 0 || level < 0) {
-      this.setError(gl.INVALID_VALUE)
-      return
-    }
 
     super.copyTexSubImage2D(
       target,
@@ -2035,8 +1752,7 @@ class WebGLRenderingContext extends NativeWebGLRenderingContext {
       throw new TypeError('framebufferRenderbuffer(GLenum, GLenum, GLenum, WebGLRenderbuffer)')
     }
 
-    if (target !== gl.FRAMEBUFFER ||
-      !this._validFramebufferAttachment(attachment) ||
+    if (!this._validFramebufferAttachment(attachment) ||
       renderbufferTarget !== gl.RENDERBUFFER) {
       this.setError(gl.INVALID_ENUM)
       return
@@ -2052,8 +1768,7 @@ class WebGLRenderingContext extends NativeWebGLRenderingContext {
       return
     }
 
-    framebuffer._setAttachment(renderbuffer, attachment)
-    this._updateFramebufferAttachments(framebuffer)
+    super.framebufferRenderbuffer(target, attachment, renderbufferTarget, renderbuffer?._ ?? null)
   }
 
   framebufferTexture2D (
@@ -2071,8 +1786,7 @@ class WebGLRenderingContext extends NativeWebGLRenderingContext {
     }
 
     // Check parameters are ok
-    if (target !== gl.FRAMEBUFFER ||
-      !this._validFramebufferAttachment(attachment)) {
+    if (!this._validFramebufferAttachment(attachment)) {
       this.setError(gl.INVALID_ENUM)
       return
     }
@@ -2110,10 +1824,7 @@ class WebGLRenderingContext extends NativeWebGLRenderingContext {
       return
     }
 
-    framebuffer._attachmentLevel[attachment] = level
-    framebuffer._attachmentFace[attachment] = textarget
-    framebuffer._setAttachment(texture, attachment)
-    this._updateFramebufferAttachments(framebuffer)
+    super.framebufferTexture2D(target, attachment, textarget, texture?._ ?? null, level)
   }
 
   frontFace (mode) {
@@ -2189,8 +1900,9 @@ class WebGLRenderingContext extends NativeWebGLRenderingContext {
   }
 
   getParameter (pname) {
-    pname |= 0
     switch (pname) {
+      case gl.COMPRESSED_TEXTURE_FORMATS:
+        return new Uint32Array(0)
       case gl.ARRAY_BUFFER_BINDING:
         return this._vertexGlobalState._arrayBufferBinding
       case gl.ELEMENT_ARRAY_BUFFER_BINDING:
@@ -2214,144 +1926,13 @@ class WebGLRenderingContext extends NativeWebGLRenderingContext {
       case gl.SHADING_LANGUAGE_VERSION:
         return 'WebGL GLSL ES 1.0 stack-gl'
 
-      case gl.COMPRESSED_TEXTURE_FORMATS:
-        return new Uint32Array(0)
-
-      // Int arrays
-      case gl.MAX_VIEWPORT_DIMS:
-      case gl.SCISSOR_BOX:
-      case gl.VIEWPORT:
-        return new Int32Array(super.getParameter(pname))
-
-      // Float arrays
-      case gl.ALIASED_LINE_WIDTH_RANGE:
-      case gl.ALIASED_POINT_SIZE_RANGE:
-      case gl.DEPTH_RANGE:
-      case gl.BLEND_COLOR:
-      case gl.COLOR_CLEAR_VALUE:
-        return new Float32Array(super.getParameter(pname))
-
-      case gl.COLOR_WRITEMASK:
-        return super.getParameter(pname)
-
-      case gl.DEPTH_CLEAR_VALUE:
-      case gl.LINE_WIDTH:
-      case gl.POLYGON_OFFSET_FACTOR:
-      case gl.POLYGON_OFFSET_UNITS:
-      case gl.SAMPLE_COVERAGE_VALUE:
-        return +super.getParameter(pname)
-
-      case gl.BLEND:
-      case gl.CULL_FACE:
-      case gl.DEPTH_TEST:
-      case gl.DEPTH_WRITEMASK:
-      case gl.DITHER:
-      case gl.POLYGON_OFFSET_FILL:
-      case gl.SAMPLE_COVERAGE_INVERT:
-      case gl.SCISSOR_TEST:
-      case gl.STENCIL_TEST:
-      case gl.UNPACK_FLIP_Y_WEBGL:
-      case gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL:
-        return !!super.getParameter(pname)
-
-      case gl.ACTIVE_TEXTURE:
-      case gl.ALPHA_BITS:
-      case gl.BLEND_DST_ALPHA:
-      case gl.BLEND_DST_RGB:
-      case gl.BLEND_EQUATION_ALPHA:
-      case gl.BLEND_EQUATION_RGB:
-      case gl.BLEND_SRC_ALPHA:
-      case gl.BLEND_SRC_RGB:
-      case gl.BLUE_BITS:
-      case gl.CULL_FACE_MODE:
-      case gl.DEPTH_BITS:
-      case gl.DEPTH_FUNC:
-      case gl.FRONT_FACE:
-      case gl.GENERATE_MIPMAP_HINT:
-      case gl.GREEN_BITS:
-      case gl.MAX_COMBINED_TEXTURE_IMAGE_UNITS:
-      case gl.MAX_CUBE_MAP_TEXTURE_SIZE:
-      case gl.MAX_FRAGMENT_UNIFORM_VECTORS:
-      case gl.MAX_RENDERBUFFER_SIZE:
-      case gl.MAX_TEXTURE_IMAGE_UNITS:
-      case gl.MAX_TEXTURE_SIZE:
-      case gl.MAX_VARYING_VECTORS:
-      case gl.MAX_VERTEX_ATTRIBS:
-      case gl.MAX_VERTEX_TEXTURE_IMAGE_UNITS:
-      case gl.MAX_VERTEX_UNIFORM_VECTORS:
-      case gl.PACK_ALIGNMENT:
-      case gl.RED_BITS:
-      case gl.SAMPLE_BUFFERS:
-      case gl.SAMPLES:
-      case gl.STENCIL_BACK_FAIL:
-      case gl.STENCIL_BACK_FUNC:
-      case gl.STENCIL_BACK_PASS_DEPTH_FAIL:
-      case gl.STENCIL_BACK_PASS_DEPTH_PASS:
-      case gl.STENCIL_BACK_REF:
-      case gl.STENCIL_BACK_VALUE_MASK:
-      case gl.STENCIL_BACK_WRITEMASK:
-      case gl.STENCIL_BITS:
-      case gl.STENCIL_CLEAR_VALUE:
-      case gl.STENCIL_FAIL:
-      case gl.STENCIL_FUNC:
-      case gl.STENCIL_PASS_DEPTH_FAIL:
-      case gl.STENCIL_PASS_DEPTH_PASS:
-      case gl.STENCIL_REF:
-      case gl.STENCIL_VALUE_MASK:
-      case gl.STENCIL_WRITEMASK:
-      case gl.SUBPIXEL_BITS:
-      case gl.UNPACK_ALIGNMENT:
-      case gl.UNPACK_COLORSPACE_CONVERSION_WEBGL:
-        return super.getParameter(pname) | 0
-
-      case gl.IMPLEMENTATION_COLOR_READ_FORMAT:
-      case gl.IMPLEMENTATION_COLOR_READ_TYPE:
-        return super.getParameter(pname)
-
       default:
-        if (this._extensions.webgl_draw_buffers) {
-          const ext = this._extensions.webgl_draw_buffers
-          switch (pname) {
-            case ext.DRAW_BUFFER0_WEBGL:
-            case ext.DRAW_BUFFER1_WEBGL:
-            case ext.DRAW_BUFFER2_WEBGL:
-            case ext.DRAW_BUFFER3_WEBGL:
-            case ext.DRAW_BUFFER4_WEBGL:
-            case ext.DRAW_BUFFER5_WEBGL:
-            case ext.DRAW_BUFFER6_WEBGL:
-            case ext.DRAW_BUFFER7_WEBGL:
-            case ext.DRAW_BUFFER8_WEBGL:
-            case ext.DRAW_BUFFER9_WEBGL:
-            case ext.DRAW_BUFFER10_WEBGL:
-            case ext.DRAW_BUFFER11_WEBGL:
-            case ext.DRAW_BUFFER12_WEBGL:
-            case ext.DRAW_BUFFER13_WEBGL:
-            case ext.DRAW_BUFFER14_WEBGL:
-            case ext.DRAW_BUFFER15_WEBGL:
-              if (ext._buffersState.length === 1 && ext._buffersState[0] === gl.BACK) {
-                return gl.BACK
-              }
-              return super.getParameter(pname)
-            case ext.MAX_DRAW_BUFFERS_WEBGL:
-            case ext.MAX_COLOR_ATTACHMENTS_WEBGL:
-              return super.getParameter(pname)
+        if (this._extensions) {
+          if (this._extensions.oes_vertex_array_object && pname === this._extensions.oes_vertex_array_object.VERTEX_ARRAY_BINDING_OES) {
+            return this._extensions.oes_vertex_array_object._activeVertexArrayObject
           }
         }
-
-        if (this._extensions.oes_standard_derivatives && pname === this._extensions.oes_standard_derivatives.FRAGMENT_SHADER_DERIVATIVE_HINT_OES) {
-          return super.getParameter(pname)
-        }
-
-        if (this._extensions.ext_texture_filter_anisotropic && pname === this._extensions.ext_texture_filter_anisotropic.MAX_TEXTURE_MAX_ANISOTROPY_EXT) {
-          return super.getParameter(pname)
-        }
-
-        if (this._extensions.oes_vertex_array_object && pname === this._extensions.oes_vertex_array_object.VERTEX_ARRAY_BINDING_OES) {
-          return this._extensions.oes_vertex_array_object._activeVertexArrayObject
-        }
-
-        this.setError(gl.INVALID_ENUM)
-        return null
+        return super.getParameter(pname)
     }
   }
 
@@ -2409,50 +1990,31 @@ class WebGLRenderingContext extends NativeWebGLRenderingContext {
     attachment |= 0
     pname |= 0
 
-    if (target !== gl.FRAMEBUFFER ||
-      !this._validFramebufferAttachment(attachment)) {
-      this.setError(gl.INVALID_ENUM)
-      return null
-    }
-
-    const framebuffer = this._activeFramebuffer
-    if (!framebuffer) {
+    // Note: there's an ANGLE bug where it doesn't check for the default framebuffer in WebGL compat.
+    if (!this._activeFramebuffer) {
       this.setError(gl.INVALID_OPERATION)
       return null
     }
 
-    const object = framebuffer._attachments[attachment]
-    if (object === null) {
-      if (pname === gl.FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE) {
-        return gl.NONE
-      }
-    } else if (object instanceof WebGLTexture) {
-      switch (pname) {
-        case gl.FRAMEBUFFER_ATTACHMENT_OBJECT_NAME:
-          return object
-        case gl.FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE:
-          return gl.TEXTURE
-        case gl.FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL:
-          return framebuffer._attachmentLevel[attachment]
-        case gl.FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE: {
-          const face = framebuffer._attachmentFace[attachment]
-          if (face === gl.TEXTURE_2D) {
-            return 0
-          }
-          return face
-        }
-      }
-    } else if (object instanceof WebGLRenderbuffer) {
-      switch (pname) {
-        case gl.FRAMEBUFFER_ATTACHMENT_OBJECT_NAME:
-          return object
-        case gl.FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE:
-          return gl.RENDERBUFFER
+    this._saveError()
+    const result = super.getFramebufferAttachmentParameter(target, attachment, pname)
+    const error = super.getError()
+    this._restoreError(error)
+
+    if (error) {
+      return null
+    }
+
+    if (error === gl.NO_ERROR && pname === gl.FRAMEBUFFER_ATTACHMENT_OBJECT_NAME) {
+      const type = super.getFramebufferAttachmentParameter(target, attachment, gl.FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE)
+      if (type === gl.RENDERBUFFER) {
+        return this._renderbuffers[result]
+      } else {
+        return this._textures[result]
       }
     }
 
-    this.setError(gl.INVALID_ENUM)
-    return null
+    return result
   }
 
   getProgramParameter (program, pname) {
@@ -2899,119 +2461,14 @@ class WebGLRenderingContext extends NativeWebGLRenderingContext {
     width |= 0
     height |= 0
 
-    if (!(this._extensions.oes_texture_float && type === gl.FLOAT && format === gl.RGBA)) {
-      if (format === gl.RGB ||
-        format === gl.ALPHA ||
-        type !== gl.UNSIGNED_BYTE) {
-        this.setError(gl.INVALID_OPERATION)
-        return
-      } else if (format !== gl.RGBA) {
-        this.setError(gl.INVALID_ENUM)
-        return
-      } else if (
-        width < 0 ||
-        height < 0 ||
-        !(pixels instanceof Uint8Array)) {
-        this.setError(gl.INVALID_VALUE)
-        return
-      }
-    }
-
-    if (!this._framebufferOk()) {
-      return
-    }
-
-    let rowStride = width * 4
-    if (rowStride % this._packAlignment !== 0) {
-      rowStride += this._packAlignment - (rowStride % this._packAlignment)
-    }
-
-    const imageSize = rowStride * (height - 1) + width * 4
-    if (imageSize <= 0) {
-      return
-    }
-    if (pixels.length < imageSize) {
-      this.setError(gl.INVALID_VALUE)
-      return
-    }
-
-    // Handle reading outside the window
-    let viewWidth = this.drawingBufferWidth
-    let viewHeight = this.drawingBufferHeight
-
-    if (this._activeFramebuffer) {
-      viewWidth = this._activeFramebuffer._width
-      viewHeight = this._activeFramebuffer._height
-    }
-
-    const pixelData = unpackTypedArray(pixels)
-
-    if (x >= viewWidth || x + width <= 0 ||
-      y >= viewHeight || y + height <= 0) {
-      for (let i = 0; i < pixelData.length; ++i) {
-        pixelData[i] = 0
-      }
-    } else if (x < 0 || x + width > viewWidth ||
-      y < 0 || y + height > viewHeight) {
-      for (let i = 0; i < pixelData.length; ++i) {
-        pixelData[i] = 0
-      }
-
-      let nx = x
-      let nWidth = width
-      if (x < 0) {
-        nWidth += x
-        nx = 0
-      }
-      if (nx + width > viewWidth) {
-        nWidth = viewWidth - nx
-      }
-      let ny = y
-      let nHeight = height
-      if (y < 0) {
-        nHeight += y
-        ny = 0
-      }
-      if (ny + height > viewHeight) {
-        nHeight = viewHeight - ny
-      }
-
-      let nRowStride = nWidth * 4
-      if (nRowStride % this._packAlignment !== 0) {
-        nRowStride += this._packAlignment - (nRowStride % this._packAlignment)
-      }
-
-      if (nWidth > 0 && nHeight > 0) {
-        const subPixels = new Uint8Array(nRowStride * nHeight)
-        super.readPixels(
-          nx,
-          ny,
-          nWidth,
-          nHeight,
-          format,
-          type,
-          subPixels)
-
-        const offset = 4 * (nx - x) + (ny - y) * rowStride
-        for (let j = 0; j < nHeight; ++j) {
-          for (let i = 0; i < nWidth; ++i) {
-            for (let k = 0; k < 4; ++k) {
-              pixelData[offset + j * rowStride + 4 * i + k] =
-                subPixels[j * nRowStride + 4 * i + k]
-            }
-          }
-        }
-      }
-    } else {
-      super.readPixels(
-        x,
-        y,
-        width,
-        height,
-        format,
-        type,
-        pixelData)
-    }
+    super.readPixels(
+      x,
+      y,
+      width,
+      height,
+      format,
+      type,
+      pixels)
   }
 
   renderbufferStorage (
@@ -3035,17 +2492,6 @@ class WebGLRenderingContext extends NativeWebGLRenderingContext {
       return
     }
 
-    if (internalFormat !== gl.RGBA4 &&
-      internalFormat !== gl.RGB565 &&
-      internalFormat !== gl.RGB5_A1 &&
-      internalFormat !== gl.DEPTH_COMPONENT16 &&
-      internalFormat !== gl.STENCIL_INDEX &&
-      internalFormat !== gl.STENCIL_INDEX8 &&
-      internalFormat !== gl.DEPTH_STENCIL) {
-      this.setError(gl.INVALID_ENUM)
-      return
-    }
-
     this._saveError()
     super.renderbufferStorage(
       target,
@@ -3061,21 +2507,6 @@ class WebGLRenderingContext extends NativeWebGLRenderingContext {
     renderbuffer._width = width
     renderbuffer._height = height
     renderbuffer._format = internalFormat
-
-    const activeFramebuffer = this._activeFramebuffer
-    if (activeFramebuffer) {
-      let needsUpdate = false
-      const attachments = this._getAttachments()
-      for (let i = 0; i < attachments.length; ++i) {
-        if (activeFramebuffer._attachments[attachments[i]] === renderbuffer) {
-          needsUpdate = true
-          break
-        }
-      }
-      if (needsUpdate) {
-        this._updateFramebufferAttachments(this._activeFramebuffer)
-      }
-    }
   }
 
   resize (width, height) {
@@ -3185,49 +2616,16 @@ class WebGLRenderingContext extends NativeWebGLRenderingContext {
       throw new TypeError('texImage2D(GLenum, GLint, GLenum, GLint, GLint, GLint, GLenum, GLenum, Uint8Array)')
     }
 
-    if (!checkFormat(format) || !checkFormat(internalFormat)) {
-      this.setError(gl.INVALID_ENUM)
-      return
-    }
-
-    if (type === gl.FLOAT && !this._extensions.oes_texture_float) {
-      this.setError(gl.INVALID_ENUM)
-      return
-    }
-
-    const texture = this._getTexImage(target)
-    if (!texture || format !== internalFormat) {
-      this.setError(gl.INVALID_OPERATION)
-      return
-    }
-
-    const pixelSize = this._computePixelSize(type, format)
-    if (pixelSize === 0) {
-      return
-    }
-
-    if (!this._checkDimensions(
-      target,
-      width,
-      height,
-      level)) {
-      return
+    // Note: there's an ANGLE bug where it doesn't check for setting texImage2D on texture zero in WebGL compat.
+    if (this._getActiveTexture(target) === null) {
+      if (target === gl.TEXTURE_2D || target === gl.TEXTURE_CUBE_MAP) {
+        this.setError(gl.INVALID_OPERATION)
+        return
+      }
     }
 
     const data = convertPixels(pixels)
-    const rowStride = this._computeRowStride(width, pixelSize)
-    const imageSize = rowStride * height
 
-    if (data && data.length < imageSize) {
-      this.setError(gl.INVALID_OPERATION)
-      return
-    }
-
-    if (border !== 0 ||
-      (validCubeTarget(target) && width !== height)) {
-      this.setError(gl.INVALID_VALUE)
-      return
-    }
     // Need to check for out of memory error
     this._saveError()
     super.texImage2D(
@@ -3242,29 +2640,12 @@ class WebGLRenderingContext extends NativeWebGLRenderingContext {
       data)
     const error = this.getError()
     this._restoreError(error)
-    if (error !== gl.NO_ERROR) {
-      return
-    }
-
-    // Save width and height at level
-    texture._levelWidth[level] = width
-    texture._levelHeight[level] = height
-    texture._format = format
-    texture._type = type
-
-    const activeFramebuffer = this._activeFramebuffer
-    if (activeFramebuffer) {
-      let needsUpdate = false
-      const attachments = this._getAttachments()
-      for (let i = 0; i < attachments.length; ++i) {
-        if (activeFramebuffer._attachments[attachments[i]] === texture) {
-          needsUpdate = true
-          break
-        }
-      }
-      if (needsUpdate) {
-        this._updateFramebufferAttachments(this._activeFramebuffer)
-      }
+    if (error === gl.NO_ERROR) {
+      const texture = this._getTexImage(target)
+      texture._levelWidth[level] = width
+      texture._levelHeight[level] = height
+      texture._format = format
+      texture._type = type
     }
   }
 
@@ -3385,22 +2766,11 @@ class WebGLRenderingContext extends NativeWebGLRenderingContext {
     pname |= 0
     param |= 0
 
-    if (this._checkTextureTarget(target)) {
-      this._verifyTextureCompleteness(target, pname, param)
-      switch (pname) {
-        case gl.TEXTURE_MIN_FILTER:
-        case gl.TEXTURE_MAG_FILTER:
-        case gl.TEXTURE_WRAP_S:
-        case gl.TEXTURE_WRAP_T:
-          return super.texParameteri(target, pname, param)
-      }
-
-      if (this._extensions.ext_texture_filter_anisotropic && pname === this._extensions.ext_texture_filter_anisotropic.TEXTURE_MAX_ANISOTROPY_EXT) {
-        return super.texParameteri(target, pname, param)
-      }
-
-      this.setError(gl.INVALID_ENUM)
+    // Note: there's an ANGLE bug where it doesn't check for setting texParameter on texture zero in WebGL compat.
+    if (!this._checkTextureTarget(target)) {
+      return
     }
+    return super.texParameteri(target, pname, param)
   }
 
   useProgram (program) {

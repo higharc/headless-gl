@@ -51,6 +51,7 @@ struct WebGLRenderingContext : public node::ObjectWrap
   EGLConfig config;
   EGLSurface surface;
   GLContextState state;
+  std::string errorMessage;
 
   // Pixel storage flags
   bool unpack_flip_y;
@@ -122,7 +123,7 @@ struct WebGLRenderingContext : public node::ObjectWrap
   bool setActive();
 
   // Unpacks a buffer full of pixels into memory
-  unsigned char *unpackPixels(
+  std::vector<uint8_t> unpackPixels(
       GLenum type,
       GLenum format,
       GLint width,
@@ -130,7 +131,7 @@ struct WebGLRenderingContext : public node::ObjectWrap
       unsigned char *pixels);
 
   // Error handling
-  GLenum lastError;
+  std::set<GLenum> errorSet;
   void setError(GLenum error);
   GLenum getError();
   static NAN_METHOD(SetError);
