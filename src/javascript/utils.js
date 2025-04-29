@@ -26,22 +26,26 @@ function checkObject (object) {
     (object === undefined)
 }
 
+function isInstanceOfType (instance, type) {
+  return Object.prototype.toString.call(instance) === `[object ${type}]`
+}
+
 function checkUniform (program, location) {
-  return location instanceof WebGLUniformLocation &&
+  return isInstanceOfType(location, 'WebGLUniformLocation') &&
     location._program === program &&
     location._linkCount === program._linkCount
 }
 
 function isTypedArray (data) {
-  return data instanceof Uint8Array ||
-    data instanceof Uint8ClampedArray ||
-    data instanceof Int8Array ||
-    data instanceof Uint16Array ||
-    data instanceof Int16Array ||
-    data instanceof Uint32Array ||
-    data instanceof Int32Array ||
-    data instanceof Float32Array ||
-    data instanceof Float64Array
+  return isInstanceOfType(data, 'Uint8Array') ||
+    isInstanceOfType(data, 'Uint8ClampedArray') ||
+    isInstanceOfType(data, 'Int8Array') ||
+    isInstanceOfType(data, 'Uint16Array') ||
+    isInstanceOfType(data, 'Int16Array') ||
+    isInstanceOfType(data, 'Uint32Array') ||
+    isInstanceOfType(data, 'Int32Array') ||
+    isInstanceOfType(data, 'Float32Array') ||
+    isInstanceOfType(data, 'Float64Array')
 }
 
 // Don't allow: ", $, `, @, \, ', \0
@@ -176,14 +180,14 @@ function formatSize (internalFormat) {
 
 function convertPixels (pixels) {
   if (typeof pixels === 'object' && pixels !== null) {
-    if (pixels instanceof ArrayBuffer) {
+    if (isInstanceOfType(pixels, 'ArrayBuffer')) {
       return new Uint8Array(pixels)
-    } else if (pixels instanceof Uint8Array ||
-      pixels instanceof Uint16Array ||
-      pixels instanceof Uint8ClampedArray ||
-      pixels instanceof Float32Array) {
+    } else if (isInstanceOfType(pixels, 'Uint8Array') ||
+      isInstanceOfType(pixels, 'Uint16Array') ||
+      isInstanceOfType(pixels, 'Uint8ClampedArray') ||
+      isInstanceOfType(pixels, 'Float32Array')) {
       return unpackTypedArray(pixels)
-    } else if (pixels instanceof Buffer) {
+    } else if (isInstanceOfType(pixels, 'Buffer')) {
       return new Uint8Array(pixels)
     }
   }

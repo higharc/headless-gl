@@ -2386,6 +2386,27 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
       data)
   }
 
+  texSubImage3D (target, level, xoffset, yoffset, zoffset, width, height, depth, format, type, pixels) {
+    if (pixels === null || pixels === undefined) {
+      return
+    }
+
+    if (typeof pixels !== 'object') {
+      throw new TypeError('texSubImage3D(GLenum, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLenum, GLenum, Uint8Array)')
+    }
+
+    if (
+      typeof pixels === "object" &&
+      typeof pixels.width !== "undefined" &&
+      typeof pixels.height !== "undefined"
+    ) {
+      pixels = extractImageData(pixels)
+    }
+    const data = convertPixels(pixels)
+
+    super.texSubImage3D(target, level, xoffset, yoffset, zoffset, width, height, depth, format, type, data)
+  }
+
   texParameterf (target, pname, param) {
     target |= 0
     pname |= 0
