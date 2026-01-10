@@ -17,6 +17,7 @@
 #include "SharedLibrary.h"
 #include "angle-loader/egl_loader.h"
 #include "angle-loader/gles_loader.h"
+#include "renderdoc_app.h"
 
 enum GLObjectType {
   GLOBJECT_TYPE_BUFFER,
@@ -98,8 +99,12 @@ struct WebGLRenderingContext : public node::ObjectWrap {
   WebGLRenderingContext(int width, int height, bool alpha, bool depth, bool stencil, bool antialias,
                         bool premultipliedAlpha, bool preserveDrawingBuffer,
                         bool preferLowPowerToHighPerformance, bool failIfMajorPerformanceCaveat,
-                        bool createWebGL2Context);
+                        bool createWebGL2Context, bool enableRenderDoc,
+                        const std::string &renderDocCapturePath);
   virtual ~WebGLRenderingContext();
+
+  // RenderDoc API pointer (nullptr if not enabled/attached)
+  RENDERDOC_API_1_6_0 *rdoc_api;
 
   // Context validation
   static WebGLRenderingContext *ACTIVE;
