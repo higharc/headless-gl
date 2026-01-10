@@ -13,6 +13,13 @@ function flag (options, name, dflt) {
   return !!options[name]
 }
 
+function stringOption (options, name, dflt) {
+  if (!options || !(typeof options === 'object') || !(name in options)) {
+    return dflt
+  }
+  return String(options[name])
+}
+
 function createContext (width, height, options) {
   width = width | 0
   height = height | 0
@@ -29,7 +36,9 @@ function createContext (width, height, options) {
     flag(options, 'preserveDrawingBuffer', false),
     flag(options, 'preferLowPowerToHighPerformance', false),
     flag(options, 'failIfMajorPerformanceCaveat', false),
-    flag(options, 'createWebGL2Context', false))
+    flag(options, 'createWebGL2Context', false),
+    flag(options, 'enableRenderDoc', false),
+    stringOption(options, 'renderDocCapturePath', ''))
 
   // Can only use premultipliedAlpha if alpha is set
   contextAttributes.premultipliedAlpha =
@@ -49,7 +58,9 @@ function createContext (width, height, options) {
       contextAttributes.preserveDrawingBuffer,
       contextAttributes.preferLowPowerToHighPerformance,
       contextAttributes.failIfMajorPerformanceCaveat,
-      contextAttributes.createWebGL2Context)
+      contextAttributes.createWebGL2Context,
+      contextAttributes.enableRenderDoc,
+      contextAttributes.renderDocCapturePath)
   } catch (e) {}
   if (!ctx) {
     return null

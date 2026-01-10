@@ -5,16 +5,17 @@
 #include <sstream>
 #include <vector>
 
-#include "webgl.h"
-
-// Uncomment this to enable RenderDoc debugging
-// #define RENDERDOC_ENABLED
-
-#if defined(RENDERDOC_ENABLED)
-#include "renderdoc_app.h"
-
-RENDERDOC_API_1_1_2 *rdoc_api = NULL;
+#ifdef _WIN32
+#include <conio.h>
+#include <windows.h>
+#else
+#include <dlfcn.h>
+#include <sys/select.h>
+#include <termios.h>
+#include <unistd.h>
 #endif
+
+#include "webgl.h"
 
 const char *GetDebugMessageSourceString(GLenum source) {
   switch (source) {
@@ -124,6 +125,8 @@ GLenum OverrideDrawBufferEnum(GLenum buffer) {
     return GL_DEPTH_ATTACHMENT;
   case GL_STENCIL:
     return GL_STENCIL_ATTACHMENT;
+  default:
+    return buffer;
   }
 }
 
@@ -152,24 +155,147 @@ std::string JoinStringSet(const std::set<std::string> &inputSet,
   return oss.str();
 }
 
-// Helper function to potentially end RenderDoc frame capture after a few draw calls
-#if defined(RENDERDOC_ENABLED)
-constexpr int RenderDocCaptureFrameCount = 200;
-
-static void MaybeEndRenderDocCapture() {
-  static int drawCallCounter = 0;
-  if (drawCallCounter++ >= RenderDocCaptureFrameCount && rdoc_api) {
-    rdoc_api->EndFrameCapture(NULL, NULL);
-    printf("RenderDoc capture ended after %d draw calls.\n", drawCallCounter);
-    drawCallCounter = 0;
-    rdoc_api->StartFrameCapture(NULL, NULL);
-  }
+// Cross-platform RenderDoc module detection
+void *GetRenderDocModule() {
+#ifdef _WIN32
+  return GetModuleHandleA("renderdoc.dll");
+#elif defined(__APPLE__)
+  return dlopen("librenderdoc.dylib", RTLD_NOLOAD);
+#else
+  return dlopen("librenderdoc.so", RTLD_NOLOAD);
+#endif
 }
 
-#define RENDERDOC_COUNTER() MaybeEndRenderDocCapture()
+// Cross-platform sleep (milliseconds)
+void SleepMs(int ms) {
+#ifdef _WIN32
+  Sleep(ms);
 #else
-#define RENDERDOC_COUNTER()
+  usleep(ms * 1000);
 #endif
+}
+
+// Check if a key was pressed (non-blocking)
+// Returns the key character if pressed, 0 otherwise
+int CheckKeyPress() {
+#ifdef _WIN32
+  if (_kbhit()) {
+    return _getch();
+  }
+  return 0;
+#else
+  struct timeval tv = {0, 0};
+  fd_set fds;
+  FD_ZERO(&fds);
+  FD_SET(STDIN_FILENO, &fds);
+  if (select(STDIN_FILENO + 1, &fds, nullptr, nullptr, &tv) > 0) {
+    return getchar();
+  }
+  return 0;
+#endif
+}
+
+#ifndef _WIN32
+// POSIX: Set terminal to non-canonical mode for immediate key input
+struct termios g_originalTermios;
+bool g_termiosModified = false;
+
+void SetNonCanonicalMode() {
+  if (!isatty(STDIN_FILENO))
+    return;
+  tcgetattr(STDIN_FILENO, &g_originalTermios);
+  struct termios raw = g_originalTermios;
+  raw.c_lflag &= ~(ICANON | ECHO);
+  tcsetattr(STDIN_FILENO, TCSANOW, &raw);
+  g_termiosModified = true;
+}
+
+void RestoreTerminalMode() {
+  if (g_termiosModified) {
+    tcsetattr(STDIN_FILENO, TCSANOW, &g_originalTermios);
+    g_termiosModified = false;
+  }
+}
+#endif
+
+// Initialize RenderDoc API from a loaded module
+RENDERDOC_API_1_6_0 *InitializeRenderDocAPI(void *module) {
+  if (!module)
+    return nullptr;
+
+#ifdef _WIN32
+  pRENDERDOC_GetAPI RENDERDOC_GetAPI =
+      (pRENDERDOC_GetAPI)GetProcAddress((HMODULE)module, "RENDERDOC_GetAPI");
+#else
+  pRENDERDOC_GetAPI RENDERDOC_GetAPI = (pRENDERDOC_GetAPI)dlsym(module, "RENDERDOC_GetAPI");
+#endif
+
+  if (!RENDERDOC_GetAPI) {
+    printf("Failed to get RENDERDOC_GetAPI function pointer.\n");
+    return nullptr;
+  }
+
+  RENDERDOC_API_1_6_0 *api = nullptr;
+  int ret = RENDERDOC_GetAPI(eRENDERDOC_API_Version_1_6_0, (void **)&api);
+  if (ret != 1) {
+    printf("RENDERDOC_GetAPI failed with return code: %d\n", ret);
+    return nullptr;
+  }
+
+  return api;
+}
+
+// Wait for RenderDoc to attach with blocking poll loop
+RENDERDOC_API_1_6_0 *WaitForRenderDoc(const std::string &capturePath) {
+#ifdef _WIN32
+  DWORD pid = GetCurrentProcessId();
+#else
+  pid_t pid = getpid();
+  SetNonCanonicalMode();
+#endif
+
+  printf("Waiting for RenderDoc to attach...\n");
+  printf("Process ID (PID): %lu\n", (unsigned long)pid);
+  printf("Attach RenderDoc to this process now.\n");
+  printf("Press Enter or Space to skip, Ctrl+C to cancel.\n");
+  fflush(stdout);
+
+  while (true) {
+    void *module = GetRenderDocModule();
+    if (module) {
+#ifndef _WIN32
+      RestoreTerminalMode();
+#endif
+      printf("RenderDoc detected!\n");
+      fflush(stdout);
+      RENDERDOC_API_1_6_0 *api = InitializeRenderDocAPI(module);
+      if (api) {
+        // Configure capture path if provided
+        if (!capturePath.empty()) {
+          api->SetCaptureFilePathTemplate(capturePath.c_str());
+          printf("RenderDoc capture path set to: %s\n", capturePath.c_str());
+        }
+        return api;
+      }
+      printf("Failed to initialize RenderDoc API.\n");
+      return nullptr;
+    }
+
+    // Check for key press to skip waiting
+    int key = CheckKeyPress();
+    if (key == ' ' || key == '\r' || key == '\n') {
+#ifndef _WIN32
+      RestoreTerminalMode();
+#endif
+      printf("Skipping RenderDoc wait.\n");
+      fflush(stdout);
+      return nullptr;
+    }
+
+    // Sleep 100ms before next check
+    SleepMs(100);
+  }
+}
 
 bool WebGLRenderingContext::HAS_DISPLAY = false;
 EGLDisplay WebGLRenderingContext::DISPLAY;
@@ -214,27 +340,19 @@ WebGLRenderingContext::WebGLRenderingContext(int width, int height, bool alpha, 
                                              bool preserveDrawingBuffer,
                                              bool preferLowPowerToHighPerformance,
                                              bool failIfMajorPerformanceCaveat,
-                                             bool createWebGL2Context)
+                                             bool createWebGL2Context, bool enableRenderDoc,
+                                             const std::string &renderDocCapturePath)
     : state(GLCONTEXT_STATE_INIT), unpack_flip_y(false), unpack_premultiply_alpha(false),
       unpack_colorspace_conversion(0x9244), unpack_alignment(4),
-      webGLToANGLEExtensions(&CaseInsensitiveCompare), next(NULL), prev(NULL) {
+      webGLToANGLEExtensions(&CaseInsensitiveCompare), next(NULL), prev(NULL), rdoc_api(nullptr) {
 
-  // Uncomment on Windows to attach debugger
-  // MessageBoxA(NULL, "Hello", "Hello", MB_OK);
-
-#if defined(RENDERDOC_ENABLED)
-  if (!rdoc_api) {
-    if (HMODULE mod = GetModuleHandleA("renderdoc.dll")) {
-      pRENDERDOC_GetAPI RENDERDOC_GetAPI =
-          (pRENDERDOC_GetAPI)GetProcAddress(mod, "RENDERDOC_GetAPI");
-      int ret = RENDERDOC_GetAPI(eRENDERDOC_API_Version_1_1_2, (void **)&rdoc_api);
-      printf("RENDERDOC_GetAPI ret: %d %p\n", ret, rdoc_api);
-      assert(ret == 1);
-    } else {
-      printf("renderdoc.dll not found\n");
+  // Initialize RenderDoc if enabled
+  if (enableRenderDoc) {
+    rdoc_api = WaitForRenderDoc(renderDocCapturePath);
+    if (!rdoc_api) {
+      printf("Warning: RenderDoc support requested but initialization failed.\n");
     }
   }
-#endif
 
   if (!eglGetProcAddress) {
     if (!eglLibrary.open("libEGL")) {
@@ -388,11 +506,12 @@ WebGLRenderingContext::WebGLRenderingContext(int width, int height, bool alpha, 
     }
   }
 
-#if defined(RENDERDOC_ENABLED)
+  // Start RenderDoc frame capture if enabled
   if (rdoc_api) {
     rdoc_api->StartFrameCapture(NULL, NULL);
+    printf("RenderDoc frame capture started.\n");
+    fflush(stdout);
   }
-#endif
 }
 
 bool WebGLRenderingContext::setActive() {
@@ -418,13 +537,13 @@ void WebGLRenderingContext::setError(GLenum error) {
 }
 
 void WebGLRenderingContext::dispose() {
-
-  // Finish RenderDoc frame capture
-#if defined(RENDERDOC_ENABLED)
+  // End RenderDoc capture before destroying context
   if (rdoc_api) {
     rdoc_api->EndFrameCapture(NULL, NULL);
+    printf("RenderDoc frame capture ended.\n");
+    fflush(stdout);
+    rdoc_api = nullptr;
   }
-#endif
 
   // Unregister context
   unregisterContext();
@@ -503,6 +622,9 @@ GL_METHOD(New) {
   Nan::HandleScope();
 
   bool createWebGL2Context = Nan::To<bool>(info[10]).ToChecked();
+  bool enableRenderDoc = Nan::To<bool>(info[11]).ToChecked();
+  Nan::Utf8String capturePathUtf8(info[12]);
+  std::string renderDocCapturePath(*capturePathUtf8);
 
   WebGLRenderingContext *instance =
       new WebGLRenderingContext(Nan::To<int32_t>(info[0]).ToChecked(), // Width
@@ -515,7 +637,9 @@ GL_METHOD(New) {
                                 Nan::To<bool>(info[7]).ToChecked(),    // preserve drawing buffer
                                 Nan::To<bool>(info[8]).ToChecked(),    // low power
                                 Nan::To<bool>(info[9]).ToChecked(),    // fail if crap
-                                createWebGL2Context);
+                                createWebGL2Context,
+                                enableRenderDoc,
+                                renderDocCapturePath);
 
   if (instance->state != GLCONTEXT_STATE_OK) {
     if (!instance->errorMessage.empty()) {
@@ -704,7 +828,6 @@ GL_METHOD(DrawArraysInstancedANGLE) {
   GLuint icount = Nan::To<uint32_t>(info[3]).ToChecked();
 
   glDrawArraysInstancedANGLE(mode, first, count, icount);
-  RENDERDOC_COUNTER();
 }
 
 GL_METHOD(DrawElementsInstancedANGLE) {
@@ -718,7 +841,6 @@ GL_METHOD(DrawElementsInstancedANGLE) {
 
   glDrawElementsInstancedANGLE(mode, count, type,
                                reinterpret_cast<GLvoid *>(static_cast<uintptr_t>(offset)), icount);
-  RENDERDOC_COUNTER();
 }
 
 GL_METHOD(DrawArrays) {
@@ -729,7 +851,6 @@ GL_METHOD(DrawArrays) {
   GLint count = Nan::To<int32_t>(info[2]).ToChecked();
 
   glDrawArrays(mode, first, count);
-  RENDERDOC_COUNTER();
 }
 
 GL_METHOD(UniformMatrix2fv) {
@@ -1292,7 +1413,6 @@ GL_METHOD(DrawElements) {
   size_t offset = Nan::To<uint32_t>(info[3]).ToChecked();
 
   glDrawElements(mode, count, type, reinterpret_cast<GLvoid *>(offset));
-  RENDERDOC_COUNTER();
 }
 
 GL_METHOD(Flush) {
@@ -2767,7 +2887,6 @@ GL_METHOD(DrawArraysInstanced) {
   GLsizei count = Nan::To<int32_t>(info[2]).ToChecked();
   GLsizei instanceCount = Nan::To<int32_t>(info[3]).ToChecked();
   glDrawArraysInstanced(mode, first, count, instanceCount);
-  RENDERDOC_COUNTER();
 }
 
 GL_METHOD(DrawElementsInstanced) {
@@ -2778,7 +2897,6 @@ GL_METHOD(DrawElementsInstanced) {
   GLintptr offset = Nan::To<int64_t>(info[3]).ToChecked();
   GLsizei instanceCount = Nan::To<int32_t>(info[4]).ToChecked();
   glDrawElementsInstanced(mode, count, type, reinterpret_cast<const void *>(offset), instanceCount);
-  RENDERDOC_COUNTER();
 }
 
 GL_METHOD(DrawRangeElements) {
@@ -2790,7 +2908,6 @@ GL_METHOD(DrawRangeElements) {
   GLenum type = Nan::To<int32_t>(info[4]).ToChecked();
   GLintptr offset = Nan::To<int64_t>(info[5]).ToChecked();
   glDrawRangeElements(mode, start, end, count, type, reinterpret_cast<const void *>(offset));
-  RENDERDOC_COUNTER();
 }
 
 GL_METHOD(DrawBuffers) {

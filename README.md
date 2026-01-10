@@ -259,9 +259,14 @@ Note: the `gl-conformance` package is currently hosted on GitHub Package Registr
 
 ### Debugging with RenderDoc
 
-To debug with RenderDoc, you can set the `RENDERDOC_ENABLED` define in the `src/native/webgl.cc` file.
+To debug with RenderDoc, install RenderDoc and pass `enableRenderDoc: true` when creating the context. Context creation then blocks until RenderDoc is attached to the process (press Enter or Space to skip waiting). A frame capture spans from context creation until the context is destroyed. Optionally, `renderDocCapturePath` sets the capture file path template:
 
-You'll need to also install RenderDoc and attach it to the gl process when you launch your program. The easiest way to attach to the running process is to uncomment the MessageBoxA call in the `src/native/webgl.cc` file.
+```javascript
+const gl = require('gl')(800, 600, {
+  enableRenderDoc: true,
+  renderDocCapturePath: './captures/myapp'
+})
+```
 
 ## License
 
