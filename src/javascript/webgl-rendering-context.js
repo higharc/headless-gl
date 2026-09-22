@@ -1810,13 +1810,13 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
       case this.TEXTURE_BINDING_CUBE_MAP:
         return this._getActiveTextureUnit()._bindCube
       case this.VERSION:
-        return 'WebGL 1.0 stack-gl ' + HEADLESS_VERSION
+        return (this._isWebGL2() ? 'WebGL 2.0 stack-gl ' : 'WebGL 1.0 stack-gl ') + HEADLESS_VERSION
       case this.VENDOR:
         return 'stack-gl'
       case this.RENDERER:
         return 'ANGLE'
       case this.SHADING_LANGUAGE_VERSION:
-        return 'WebGL GLSL ES 1.0 stack-gl'
+        return this._isWebGL2() ? 'WebGL GLSL ES 3.00 stack-gl' : 'WebGL GLSL ES 1.0 stack-gl'
 
       default:
         if (this._extensions) {
@@ -2032,6 +2032,19 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
         return super.getTexParameter(target, pname)
     }
 
+    if (this._isWebGL2()) {
+      switch (pname) {
+        case this.TEXTURE_BASE_LEVEL:
+        case this.TEXTURE_MAX_LEVEL:
+        case this.TEXTURE_MIN_LOD:
+        case this.TEXTURE_MAX_LOD:
+        case this.TEXTURE_COMPARE_MODE:
+        case this.TEXTURE_COMPARE_FUNC:
+        case this.TEXTURE_WRAP_R:
+          return super.getTexParameter(target, pname)
+      }
+    }
+
     if (this._extensions.ext_texture_filter_anisotropic && pname === this._extensions.ext_texture_filter_anisotropic.TEXTURE_MAX_ANISOTROPY_EXT) {
       return super.getTexParameter(target, pname)
     }
@@ -2091,6 +2104,37 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
           return new Float32Array(data.slice(0, 16))
         case this.SAMPLER_2D:
         case this.SAMPLER_CUBE:
+          return data[0] | 0
+        case this.UNSIGNED_INT:
+          return data[0] >>> 0
+        case this.UNSIGNED_INT_VEC2:
+          return new Uint32Array(data.slice(0, 2))
+        case this.UNSIGNED_INT_VEC3:
+          return new Uint32Array(data.slice(0, 3))
+        case this.UNSIGNED_INT_VEC4:
+          return new Uint32Array(data.slice(0, 4))
+        case this.FLOAT_MAT2x3:
+        case this.FLOAT_MAT3x2:
+          return new Float32Array(data.slice(0, 6))
+        case this.FLOAT_MAT2x4:
+        case this.FLOAT_MAT4x2:
+          return new Float32Array(data.slice(0, 8))
+        case this.FLOAT_MAT3x4:
+        case this.FLOAT_MAT4x3:
+          return new Float32Array(data.slice(0, 12))
+        case this.SAMPLER_3D:
+        case this.SAMPLER_2D_SHADOW:
+        case this.SAMPLER_2D_ARRAY:
+        case this.SAMPLER_2D_ARRAY_SHADOW:
+        case this.SAMPLER_CUBE_SHADOW:
+        case this.INT_SAMPLER_2D:
+        case this.INT_SAMPLER_3D:
+        case this.INT_SAMPLER_CUBE:
+        case this.INT_SAMPLER_2D_ARRAY:
+        case this.UNSIGNED_INT_SAMPLER_2D:
+        case this.UNSIGNED_INT_SAMPLER_3D:
+        case this.UNSIGNED_INT_SAMPLER_CUBE:
+        case this.UNSIGNED_INT_SAMPLER_2D_ARRAY:
           return data[0] | 0
         default:
           return null
@@ -2630,6 +2674,19 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
         case this.TEXTURE_WRAP_S:
         case this.TEXTURE_WRAP_T:
           return super.texParameterf(target, pname, param)
+      }
+
+      if (this._isWebGL2()) {
+        switch (pname) {
+          case this.TEXTURE_BASE_LEVEL:
+          case this.TEXTURE_MAX_LEVEL:
+          case this.TEXTURE_MIN_LOD:
+          case this.TEXTURE_MAX_LOD:
+          case this.TEXTURE_COMPARE_MODE:
+          case this.TEXTURE_COMPARE_FUNC:
+          case this.TEXTURE_WRAP_R:
+            return super.texParameterf(target, pname, param)
+        }
       }
 
       if (this._extensions.ext_texture_filter_anisotropic && pname === this._extensions.ext_texture_filter_anisotropic.TEXTURE_MAX_ANISOTROPY_EXT) {
