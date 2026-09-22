@@ -3,6 +3,7 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <string>
 #include <vector>
 
 #ifdef _WIN32
@@ -3217,9 +3218,25 @@ GL_METHOD(GetIndexedParameter) {
   GL_BOILERPLATE;
   GLenum target = Nan::To<int32_t>(info[0]).ToChecked();
   GLuint index = Nan::To<uint32_t>(info[1]).ToChecked();
-  GLint result;
-  glGetIntegeri_v(target, index, &result);
-  info.GetReturnValue().Set(Nan::New(result));
+
+  switch (target) {
+  case GL_TRANSFORM_FEEDBACK_BUFFER_START:
+  case GL_TRANSFORM_FEEDBACK_BUFFER_SIZE:
+  case GL_UNIFORM_BUFFER_START:
+  case GL_UNIFORM_BUFFER_SIZE: {
+    // These are GLintptr / GLsizeiptr sized rather than GLint sized.
+    GLint64 result = 0;
+    glGetInteger64i_v(target, index, &result);
+    info.GetReturnValue().Set(Nan::New<v8::Number>(static_cast<double>(result)));
+    return;
+  }
+  default: {
+    GLint result = 0;
+    glGetIntegeri_v(target, index, &result);
+    info.GetReturnValue().Set(Nan::New(result));
+    return;
+  }
+  }
 }
 
 GL_METHOD(GetUniformIndices) {
@@ -3227,10 +3244,18 @@ GL_METHOD(GetUniformIndices) {
   GLuint program = Nan::To<uint32_t>(info[0]).ToChecked();
   auto uniformNames = info[1].As<v8::Array>();
   GLsizei count = uniformNames->Length();
+  std::vector<std::string> nameStorage;
+  nameStorage.reserve(count);
   const char **names = new const char *[count];
   for (GLsizei i = 0; i < count; i++) {
     Nan::Utf8String name(Nan::Get(uniformNames, i).ToLocalChecked());
-    names[i] = *name;
+    // The Nan::Utf8String owns its buffer and frees it at the end of this
+    // iteration, so the name has to be copied to keep it alive until the
+    // glGetUniformIndices call below.
+    nameStorage.push_back(*name ? *name : "");
+  }
+  for (GLsizei i = 0; i < count; i++) {
+    names[i] = nameStorage[i].c_str();
   }
   GLuint *indices = new GLuint[count];
   glGetUniformIndices(program, count, names, indices);
@@ -3277,7 +3302,29 @@ GL_METHOD(GetActiveUniformBlockParameter) {
   GLuint program = Nan::To<uint32_t>(info[0]).ToChecked();
   GLuint uniformBlockIndex = Nan::To<uint32_t>(info[1]).ToChecked();
   GLenum pname = Nan::To<int32_t>(info[2]).ToChecked();
-  GLint result;
+
+  if (pname == GL_UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES) {
+    // This query writes one index per active uniform in the block rather than
+    // a single value.
+    GLint count = 0;
+    glGetActiveUniformBlockiv(
+        program, uniformBlockIndex, GL_UNIFORM_BLOCK_ACTIVE_UNIFORMS, &count);
+    if (count < 0) {
+      count = 0;
+    }
+    std::vector<GLint> indices(count);
+    if (count > 0) {
+      glGetActiveUniformBlockiv(program, uniformBlockIndex, pname, indices.data());
+    }
+    v8::Local<v8::Array> result = Nan::New<v8::Array>(count);
+    for (GLint i = 0; i < count; i++) {
+      Nan::Set(result, i, Nan::New(indices[i]));
+    }
+    info.GetReturnValue().Set(result);
+    return;
+  }
+
+  GLint result = 0;
   glGetActiveUniformBlockiv(program, uniformBlockIndex, pname, &result);
   info.GetReturnValue().Set(Nan::New(result));
 }
@@ -3287,9 +3334,10 @@ GL_METHOD(GetActiveUniformBlockName) {
   GLuint program = Nan::To<uint32_t>(info[0]).ToChecked();
   GLuint uniformBlockIndex = Nan::To<uint32_t>(info[1]).ToChecked();
   char name[256];
-  GLsizei length;
-  glGetActiveUniformBlockName(program, uniformBlockIndex, 256, &length, name);
-  info.GetReturnValue().Set(Nan::New(name).ToLocalChecked());
+  GLsizei length = 0;
+  name[0] = 0;
+  glGetActiveUniformBlockName(program, uniformBlockIndex, sizeof(name), &length, name);
+  info.GetReturnValue().Set(Nan::New(name, length).ToLocalChecked());
 }
 
 GL_METHOD(UniformBlockBinding) {
