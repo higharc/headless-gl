@@ -42,6 +42,7 @@ const { getEXTColorBufferFloat } = require('./extensions/ext-color-buffer-float'
 
 // These are defined by the WebGL spec
 const MAX_UNIFORM_LENGTH = 256
+const INVALID_INDEX = 0xFFFFFFFF
 const MAX_ATTRIBUTE_LENGTH = 256
 
 const DEFAULT_ATTACHMENTS = [
@@ -294,6 +295,29 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
   // leave its type untouched.
   _tracksElements (buffer) {
     return buffer._binding !== this.ARRAY_BUFFER
+  }
+
+  // Validates the program argument of the uniform block queries the same way
+  // the other program queries do.
+  _checkQueryProgram (program, signature) {
+    if (!checkObject(program)) {
+      throw new TypeError(signature)
+    }
+    if (!program) {
+      this.setError(this.INVALID_VALUE)
+      return false
+    }
+    return this._checkWrapper(program, WebGLProgram)
+  }
+
+  // Runs a native query, returning null if it generated an error. The WebGL
+  // 2.0 uniform block queries are all specified to work this way.
+  _queryOrNull (query) {
+    this._saveError()
+    const value = query()
+    const error = super.getError()
+    this._restoreError(error)
+    return error === this.NO_ERROR ? value : null
   }
 
   _getActiveBuffer (target) {
@@ -1734,6 +1758,112 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
     return null
   }
 
+  getActiveUniformBlockName (program, uniformBlockIndex) {
+    if (!this._isWebGL2()) {
+      this.setError(this.INVALID_ENUM)
+      return null
+    }
+    if (!this._checkQueryProgram(program, 'getActiveUniformBlockName(WebGLProgram, GLuint)')) {
+      return null
+    }
+    return this._queryOrNull(() => super.getActiveUniformBlockName(
+      program._ | 0,
+      uniformBlockIndex >>> 0))
+  }
+
+  getActiveUniformBlockParameter (program, uniformBlockIndex, pname) {
+    if (!this._isWebGL2()) {
+      this.setError(this.INVALID_ENUM)
+      return null
+    }
+    pname |= 0
+    if (!this._checkQueryProgram(program, 'getActiveUniformBlockParameter(WebGLProgram, GLuint, GLenum)')) {
+      return null
+    }
+
+    switch (pname) {
+      case this.UNIFORM_BLOCK_BINDING:
+      case this.UNIFORM_BLOCK_DATA_SIZE:
+      case this.UNIFORM_BLOCK_ACTIVE_UNIFORMS:
+      case this.UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES:
+      case this.UNIFORM_BLOCK_REFERENCED_BY_VERTEX_SHADER:
+      case this.UNIFORM_BLOCK_REFERENCED_BY_FRAGMENT_SHADER:
+        break
+      default:
+        this.setError(this.INVALID_ENUM)
+        return null
+    }
+
+    const value = this._queryOrNull(() => super.getActiveUniformBlockParameter(
+      program._ | 0,
+      uniformBlockIndex >>> 0,
+      pname))
+    if (value === null) {
+      return null
+    }
+
+    switch (pname) {
+      case this.UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES:
+        return new Uint32Array(value)
+      case this.UNIFORM_BLOCK_REFERENCED_BY_VERTEX_SHADER:
+      case this.UNIFORM_BLOCK_REFERENCED_BY_FRAGMENT_SHADER:
+        return !!value
+      default:
+        return value >>> 0
+    }
+  }
+
+  getActiveUniforms (program, uniformIndices, pname) {
+    if (!this._isWebGL2()) {
+      this.setError(this.INVALID_ENUM)
+      return null
+    }
+    pname |= 0
+    const signature = 'getActiveUniforms(WebGLProgram, sequence<GLuint>, GLenum)'
+    if (!checkObject(program)) {
+      throw new TypeError(signature)
+    }
+    if (!Array.isArray(uniformIndices)) {
+      throw new TypeError(signature)
+    }
+    const indices = uniformIndices.map((index) => index >>> 0)
+    if (!this._checkQueryProgram(program, signature)) {
+      return null
+    }
+
+    switch (pname) {
+      case this.UNIFORM_TYPE:
+      case this.UNIFORM_SIZE:
+      case this.UNIFORM_BLOCK_INDEX:
+      case this.UNIFORM_OFFSET:
+      case this.UNIFORM_ARRAY_STRIDE:
+      case this.UNIFORM_MATRIX_STRIDE:
+      case this.UNIFORM_IS_ROW_MAJOR:
+        break
+      default:
+        this.setError(this.INVALID_ENUM)
+        return null
+    }
+
+    const values = this._queryOrNull(() => super.getActiveUniforms(
+      program._ | 0,
+      indices,
+      pname))
+    if (values === null) {
+      return null
+    }
+
+    switch (pname) {
+      case this.UNIFORM_IS_ROW_MAJOR:
+        return values.map((value) => !!value)
+      case this.UNIFORM_TYPE:
+      case this.UNIFORM_SIZE:
+        return values.map((value) => value >>> 0)
+      default:
+        return values.map((value) => value | 0)
+    }
+  }
+
   getAttachedShaders (program) {
     if (!checkObject(program) ||
       (typeof program === 'object' &&
@@ -1768,6 +1898,42 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
       return super.getAttribLocation(program._ | 0, name + '')
     }
     return -1
+  }
+
+  getIndexedParameter (target, index) {
+    if (!this._isWebGL2()) {
+      this.setError(this.INVALID_ENUM)
+      return null
+    }
+    target |= 0
+    index >>>= 0
+
+    switch (target) {
+      case this.TRANSFORM_FEEDBACK_BUFFER_BINDING:
+      case this.UNIFORM_BUFFER_BINDING:
+      case this.TRANSFORM_FEEDBACK_BUFFER_SIZE:
+      case this.TRANSFORM_FEEDBACK_BUFFER_START:
+      case this.UNIFORM_BUFFER_SIZE:
+      case this.UNIFORM_BUFFER_START:
+        break
+      default:
+        this.setError(this.INVALID_ENUM)
+        return null
+    }
+
+    const value = this._queryOrNull(() => super.getIndexedParameter(target, index))
+    if (value === null) {
+      return null
+    }
+
+    switch (target) {
+      case this.TRANSFORM_FEEDBACK_BUFFER_BINDING:
+      case this.UNIFORM_BUFFER_BINDING:
+        // The native query returns the buffer name rather than the wrapper.
+        return this._buffers[value | 0] || null
+      default:
+        return value
+    }
   }
 
   getParameter (pname) {
@@ -1920,6 +2086,13 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
         case this.ACTIVE_UNIFORMS:
           return super.getProgramParameter(program._, pname)
       }
+
+      // ACTIVE_UNIFORM_BLOCKS gives the valid range of the uniform block
+      // index accepted by the uniform block queries.
+      if (this._isWebGL2() && pname === this.ACTIVE_UNIFORM_BLOCKS) {
+        return super.getProgramParameter(program._, pname)
+      }
+
       this.setError(this.INVALID_ENUM)
     }
     return null
@@ -2207,6 +2380,58 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
       }
     }
     return null
+  }
+
+  getUniformBlockIndex (program, uniformBlockName) {
+    if (!this._isWebGL2()) {
+      this.setError(this.INVALID_ENUM)
+      return INVALID_INDEX
+    }
+    const signature = 'getUniformBlockIndex(WebGLProgram, String)'
+    if (!checkObject(program)) {
+      throw new TypeError(signature)
+    }
+    uniformBlockName += ''
+    if (!isValidString(uniformBlockName) || uniformBlockName.length > MAX_UNIFORM_LENGTH) {
+      this.setError(this.INVALID_VALUE)
+      return INVALID_INDEX
+    }
+    if (!this._checkQueryProgram(program, signature)) {
+      return INVALID_INDEX
+    }
+    return super.getUniformBlockIndex(program._ | 0, uniformBlockName) >>> 0
+  }
+
+  getUniformIndices (program, uniformNames) {
+    if (!this._isWebGL2()) {
+      this.setError(this.INVALID_ENUM)
+      return null
+    }
+    const signature = 'getUniformIndices(WebGLProgram, sequence<String>)'
+    if (!checkObject(program)) {
+      throw new TypeError(signature)
+    }
+    if (!Array.isArray(uniformNames)) {
+      throw new TypeError(signature)
+    }
+    const names = uniformNames.map((name) => name + '')
+    for (const name of names) {
+      if (!isValidString(name) || name.length > MAX_UNIFORM_LENGTH) {
+        this.setError(this.INVALID_VALUE)
+        return null
+      }
+    }
+    if (!this._checkQueryProgram(program, signature)) {
+      return null
+    }
+
+    const indices = this._queryOrNull(() => super.getUniformIndices(
+      program._ | 0,
+      names))
+    if (indices === null) {
+      return null
+    }
+    return indices.map((index) => index >>> 0)
   }
 
   getVertexAttrib (index, pname) {
@@ -2687,6 +2912,20 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
       return
     }
     return super.texParameteri(target, pname, param)
+  }
+
+  uniformBlockBinding (program, uniformBlockIndex, uniformBlockBinding) {
+    if (!this._isWebGL2()) {
+      this.setError(this.INVALID_ENUM)
+      return
+    }
+    if (!this._checkQueryProgram(program, 'uniformBlockBinding(WebGLProgram, GLuint, GLuint)')) {
+      return
+    }
+    return super.uniformBlockBinding(
+      program._ | 0,
+      uniformBlockIndex >>> 0,
+      uniformBlockBinding >>> 0)
   }
 
   useProgram (program) {
