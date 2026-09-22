@@ -59,6 +59,11 @@ tape('webgl2 buffer targets are rejected by a webgl1 context', function (t) {
     t.equals(gl.getError(), gl.INVALID_ENUM, 'getBufferParameter(' + target + ') is an invalid enum')
   }
 
+  gl.bindBufferBase(0x8C8E, 0, buffer)
+  t.equals(gl.getError(), gl.INVALID_ENUM, 'bindBufferBase is not available')
+  gl.bindBufferRange(0x8C8E, 0, buffer, 0, 16)
+  t.equals(gl.getError(), gl.INVALID_ENUM, 'bindBufferRange is not available')
+
   t.end()
 })
 
@@ -121,6 +126,57 @@ tape('webgl2 element array buffers cannot be used as other data', function (t) {
   t.equals(gl.getError(), gl.NO_ERROR, 'an other data buffer can be bound for copying')
   gl.bindBuffer(gl.UNIFORM_BUFFER, dataBuffer)
   t.equals(gl.getError(), gl.NO_ERROR, 'and stays other data')
+
+  t.end()
+})
+
+tape('webgl2 indexed buffer bindings', function (t) {
+  const gl = createWebGL2Context()
+  const buffer = gl.createBuffer()
+
+  gl.bindBuffer(gl.UNIFORM_BUFFER, buffer)
+  gl.bufferData(gl.UNIFORM_BUFFER, 256, gl.STATIC_DRAW)
+  gl.bindBuffer(gl.UNIFORM_BUFFER, null)
+
+  gl.bindBufferBase(gl.UNIFORM_BUFFER, 0, buffer)
+  t.equals(gl.getError(), gl.NO_ERROR, 'bindBufferBase succeeds')
+  t.equals(gl.getParameter(gl.UNIFORM_BUFFER_BINDING), buffer, 'bindBufferBase also sets the generic binding')
+
+  gl.bindBufferBase(gl.UNIFORM_BUFFER, 0, null)
+  t.equals(gl.getParameter(gl.UNIFORM_BUFFER_BINDING), null, 'bindBufferBase(null) clears the generic binding')
+
+  gl.bindBufferRange(gl.UNIFORM_BUFFER, 0, buffer, 0, 16)
+  t.equals(gl.getError(), gl.NO_ERROR, 'bindBufferRange succeeds')
+  t.equals(gl.getParameter(gl.UNIFORM_BUFFER_BINDING), buffer, 'bindBufferRange also sets the generic binding')
+
+  gl.bindBufferBase(gl.ARRAY_BUFFER, 0, buffer)
+  t.equals(gl.getError(), gl.INVALID_ENUM, 'bindBufferBase only accepts the indexed targets')
+  gl.bindBufferRange(gl.ARRAY_BUFFER, 0, buffer, 0, 16)
+  t.equals(gl.getError(), gl.INVALID_ENUM, 'bindBufferRange only accepts the indexed targets')
+
+  // A failed binding leaves the generic binding point untouched.
+  const maxBindings = gl.getParameter(gl.MAX_UNIFORM_BUFFER_BINDINGS)
+  gl.bindBufferBase(gl.UNIFORM_BUFFER, maxBindings, buffer)
+  t.equals(gl.getError(), gl.INVALID_VALUE, 'bindBufferBase rejects an out of range index')
+  t.equals(gl.getParameter(gl.UNIFORM_BUFFER_BINDING), buffer, 'the generic binding is untouched')
+
+  t.end()
+})
+
+tape('indexed buffer bindings set the webgl2 buffer type', function (t) {
+  const gl = createWebGL2Context()
+
+  const elementBuffer = gl.createBuffer()
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, elementBuffer)
+  gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, elementBuffer)
+  t.equals(gl.getError(), gl.INVALID_OPERATION, 'an element array buffer cannot be bound as other data')
+  t.equals(gl.getParameter(gl.TRANSFORM_FEEDBACK_BUFFER_BINDING), null, 'the binding point is untouched')
+
+  const dataBuffer = gl.createBuffer()
+  gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, dataBuffer)
+  t.equals(gl.getError(), gl.NO_ERROR, 'a new buffer can be bound to an indexed binding point')
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, dataBuffer)
+  t.equals(gl.getError(), gl.INVALID_OPERATION, 'the buffer is now other data')
 
   t.end()
 })

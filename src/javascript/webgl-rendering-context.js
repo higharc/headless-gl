@@ -307,6 +307,40 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
     return this._bufferBindings[target] || null
   }
 
+  // Validates the arguments shared by bindBufferBase and bindBufferRange.
+  // Returns the name of the buffer to bind, or -1 if the call should be
+  // ignored.
+  _checkIndexedBufferBinding (target, buffer) {
+    if (target !== this.TRANSFORM_FEEDBACK_BUFFER &&
+      target !== this.UNIFORM_BUFFER) {
+      this.setError(this.INVALID_ENUM)
+      return -1
+    }
+
+    if (!buffer) {
+      return 0
+    } else if (buffer._pendingDelete) {
+      return -1
+    } else if (!this._checkWrapper(buffer, WebGLBuffer)) {
+      return -1
+    } else if (buffer._binding && buffer._binding !== this._getBufferType(target)) {
+      this.setError(this.INVALID_OPERATION)
+      return -1
+    }
+    return buffer._ | 0
+  }
+
+  // Records the state that bindBufferBase and bindBufferRange share with
+  // bindBuffer, once the binding is known to have succeeded.
+  _setIndexedBufferBinding (target, buffer) {
+    if (buffer) {
+      buffer._binding = this._getBufferType(target) | 0
+    }
+    // Binding a buffer to an indexed binding point also binds it to the
+    // generic binding point of the same target.
+    this._setActiveBuffer(target, buffer)
+  }
+
   _setActiveBuffer (target, buffer) {
     const current = this._bufferBindings[target] || null
     if (current !== buffer) {
@@ -712,6 +746,64 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
       // The WebGL 2.0 only binding points are part of the global context state.
       this._setActiveBuffer(target, buffer)
     }
+  }
+
+  bindBufferBase (target, index, buffer) {
+    if (!this._isWebGL2()) {
+      this.setError(this.INVALID_ENUM)
+      return
+    }
+    target |= 0
+    index |= 0
+    if (!checkObject(buffer)) {
+      throw new TypeError('bindBufferBase(GLenum, GLuint, WebGLBuffer)')
+    }
+    buffer = buffer || null
+
+    const name = this._checkIndexedBufferBinding(target, buffer)
+    if (name < 0) {
+      return
+    }
+
+    this._saveError()
+    super.bindBufferBase(target, index, name)
+    const error = super.getError()
+    this._restoreError(error)
+    if (error !== this.NO_ERROR) {
+      return
+    }
+
+    this._setIndexedBufferBinding(target, buffer)
+  }
+
+  bindBufferRange (target, index, buffer, offset, size) {
+    if (!this._isWebGL2()) {
+      this.setError(this.INVALID_ENUM)
+      return
+    }
+    target |= 0
+    index |= 0
+    offset |= 0
+    size |= 0
+    if (!checkObject(buffer)) {
+      throw new TypeError('bindBufferRange(GLenum, GLuint, WebGLBuffer, GLintptr, GLsizeiptr)')
+    }
+    buffer = buffer || null
+
+    const name = this._checkIndexedBufferBinding(target, buffer)
+    if (name < 0) {
+      return
+    }
+
+    this._saveError()
+    super.bindBufferRange(target, index, name, offset, size)
+    const error = super.getError()
+    this._restoreError(error)
+    if (error !== this.NO_ERROR) {
+      return
+    }
+
+    this._setIndexedBufferBinding(target, buffer)
   }
 
   bindRenderbuffer (target, object) {
