@@ -236,13 +236,89 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
     return true
   }
 
+  _checkBufferTarget (target) {
+    if (target === this.ARRAY_BUFFER ||
+      target === this.ELEMENT_ARRAY_BUFFER) {
+      return true
+    } else if (this._isWebGL2() && (
+      target === this.COPY_READ_BUFFER ||
+      target === this.COPY_WRITE_BUFFER ||
+      target === this.PIXEL_PACK_BUFFER ||
+      target === this.PIXEL_UNPACK_BUFFER ||
+      target === this.TRANSFORM_FEEDBACK_BUFFER ||
+      target === this.UNIFORM_BUFFER)) {
+      return true
+    }
+    this.setError(this.INVALID_ENUM)
+    return false
+  }
+
+  _checkBufferUsage (usage) {
+    if (usage === this.STREAM_DRAW ||
+      usage === this.STATIC_DRAW ||
+      usage === this.DYNAMIC_DRAW) {
+      return true
+    } else if (this._isWebGL2() && (
+      usage === this.STREAM_READ ||
+      usage === this.STREAM_COPY ||
+      usage === this.STATIC_READ ||
+      usage === this.STATIC_COPY ||
+      usage === this.DYNAMIC_READ ||
+      usage === this.DYNAMIC_COPY)) {
+      return true
+    }
+    this.setError(this.INVALID_ENUM)
+    return false
+  }
+
+  // Returns the WebGL buffer type that binding a buffer to the given target
+  // requires it to have, or 0 if the target accepts a buffer of any type.
+  // In WebGL 2.0 a buffer that has been used as an element array buffer can't
+  // be used for anything else and vice versa. The copy binding points accept
+  // either type and leave an already typed buffer alone, but they do type a
+  // previously untyped buffer as other data, which the caller handles.
+  _getBufferType (target) {
+    if (!this._isWebGL2()) {
+      return target
+    } else if (target === this.COPY_READ_BUFFER ||
+      target === this.COPY_WRITE_BUFFER) {
+      return 0
+    }
+    return target === this.ELEMENT_ARRAY_BUFFER ? this.ELEMENT_ARRAY_BUFFER : this.ARRAY_BUFFER
+  }
+
+  // A shadow copy of the buffer contents is kept for element array buffers.
+  // It's the type of the buffer rather than the target being written that
+  // decides whether the shadow copy needs updating: in WebGL 2.0 an element
+  // array buffer can also be written through the copy binding points, which
+  // leave its type untouched.
+  _tracksElements (buffer) {
+    return buffer._binding !== this.ARRAY_BUFFER
+  }
+
   _getActiveBuffer (target) {
     if (target === this.ARRAY_BUFFER) {
       return this._vertexGlobalState._arrayBufferBinding
     } else if (target === this.ELEMENT_ARRAY_BUFFER) {
       return this._vertexObjectState._elementArrayBufferBinding
     }
-    return null
+    // The remaining binding points are WebGL 2.0 only and are not part of the
+    // vertex array state.
+    return this._bufferBindings[target] || null
+  }
+
+  _setActiveBuffer (target, buffer) {
+    const current = this._bufferBindings[target] || null
+    if (current !== buffer) {
+      if (current) {
+        current._refCount -= 1
+        current._checkDelete()
+      }
+      if (buffer) {
+        buffer._refCount += 1
+      }
+      this._bufferBindings[target] = buffer
+    }
   }
 
   _getActiveTextureUnit () {
@@ -598,9 +674,7 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
     if (!checkObject(buffer)) {
       throw new TypeError('bindBuffer(GLenum, WebGLBuffer)')
     }
-    if (target !== this.ARRAY_BUFFER &&
-      target !== this.ELEMENT_ARRAY_BUFFER) {
-      this.setError(this.INVALID_ENUM)
+    if (!this._checkBufferTarget(target)) {
       return
     }
 
@@ -610,11 +684,18 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
     } else if (buffer._pendingDelete) {
       return
     } else if (this._checkWrapper(buffer, WebGLBuffer)) {
-      if (buffer._binding && buffer._binding !== target) {
-        this.setError(this.INVALID_OPERATION)
-        return
+      const type = this._getBufferType(target)
+      if (type) {
+        if (buffer._binding && buffer._binding !== type) {
+          this.setError(this.INVALID_OPERATION)
+          return
+        }
+        buffer._binding = type | 0
+      } else if (!buffer._binding) {
+        // Binding a buffer that doesn't have a type yet to one of the copy
+        // binding points types it as other data.
+        buffer._binding = this.ARRAY_BUFFER | 0
       }
-      buffer._binding = target | 0
 
       super.bindBuffer(target, buffer._ | 0)
     } else {
@@ -624,9 +705,12 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
     if (target === this.ARRAY_BUFFER) {
       // Buffers of type ARRAY_BUFFER are bound to the global vertex state.
       this._vertexGlobalState.setArrayBuffer(buffer)
-    } else {
+    } else if (target === this.ELEMENT_ARRAY_BUFFER) {
       // Buffers of type ELEMENT_ARRAY_BUFFER are bound to vertex array object state.
       this._vertexObjectState.setElementArrayBuffer(buffer)
+    } else {
+      // The WebGL 2.0 only binding points are part of the global context state.
+      this._setActiveBuffer(target, buffer)
     }
   }
 
@@ -910,16 +994,11 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
   bufferData (target, data, usage) {
     target |= 0
     usage |= 0
-    if (usage !== this.STREAM_DRAW &&
-      usage !== this.STATIC_DRAW &&
-      usage !== this.DYNAMIC_DRAW) {
-      this.setError(this.INVALID_ENUM)
+    if (!this._checkBufferUsage(usage)) {
       return
     }
 
-    if (target !== this.ARRAY_BUFFER &&
-      target !== this.ELEMENT_ARRAY_BUFFER) {
-      this.setError(this.INVALID_ENUM)
+    if (!this._checkBufferTarget(target)) {
       return
     }
 
@@ -952,7 +1031,7 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
       }
 
       active._size = u8Data.length
-      if (target === this.ELEMENT_ARRAY_BUFFER) {
+      if (this._tracksElements(active)) {
         active._elements = new Uint8Array(u8Data)
       }
     } else if (typeof data === 'number') {
@@ -974,7 +1053,7 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
       }
 
       active._size = size
-      if (target === this.ELEMENT_ARRAY_BUFFER) {
+      if (this._tracksElements(active)) {
         active._elements = new Uint8Array(size)
       }
     } else {
@@ -986,9 +1065,7 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
     target |= 0
     offset |= 0
 
-    if (target !== this.ARRAY_BUFFER &&
-      target !== this.ELEMENT_ARRAY_BUFFER) {
-      this.setError(this.INVALID_ENUM)
+    if (!this._checkBufferTarget(target)) {
       return
     }
 
@@ -1027,7 +1104,7 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
       return
     }
 
-    if (target === this.ELEMENT_ARRAY_BUFFER) {
+    if (this._tracksElements(active)) {
       active._elements.set(u8Data, offset)
     }
 
@@ -1203,6 +1280,11 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
     }
     if (this._vertexObjectState._elementArrayBufferBinding === buffer) {
       this.bindBuffer(this.ELEMENT_ARRAY_BUFFER, null)
+    }
+    for (const target of Object.keys(this._bufferBindings)) {
+      if (this._bufferBindings[target] === buffer) {
+        this.bindBuffer(target | 0, null)
+      }
     }
 
     if (this._vertexObjectState === this._defaultVertexObjectState) {
@@ -1604,6 +1686,18 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
         return this._vertexGlobalState._arrayBufferBinding
       case this.ELEMENT_ARRAY_BUFFER_BINDING:
         return this._vertexObjectState._elementArrayBufferBinding
+      case this.COPY_READ_BUFFER_BINDING:
+        return this._getActiveBuffer(this.COPY_READ_BUFFER)
+      case this.COPY_WRITE_BUFFER_BINDING:
+        return this._getActiveBuffer(this.COPY_WRITE_BUFFER)
+      case this.PIXEL_PACK_BUFFER_BINDING:
+        return this._getActiveBuffer(this.PIXEL_PACK_BUFFER)
+      case this.PIXEL_UNPACK_BUFFER_BINDING:
+        return this._getActiveBuffer(this.PIXEL_UNPACK_BUFFER)
+      case this.TRANSFORM_FEEDBACK_BUFFER_BINDING:
+        return this._getActiveBuffer(this.TRANSFORM_FEEDBACK_BUFFER)
+      case this.UNIFORM_BUFFER_BINDING:
+        return this._getActiveBuffer(this.UNIFORM_BUFFER)
       case this.CURRENT_PROGRAM:
         return this._activeProgram
       case this.FRAMEBUFFER_BINDING:
@@ -1664,9 +1758,7 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
   getBufferParameter (target, pname) {
     target |= 0
     pname |= 0
-    if (target !== this.ARRAY_BUFFER &&
-      target !== this.ELEMENT_ARRAY_BUFFER) {
-      this.setError(this.INVALID_ENUM)
+    if (!this._checkBufferTarget(target)) {
       return null
     }
 

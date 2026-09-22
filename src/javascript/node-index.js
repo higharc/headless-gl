@@ -81,6 +81,10 @@ function createContext (width, height, options) {
   ctx._framebuffers = {}
   ctx._renderbuffers = {}
 
+  // Bindings for the buffer targets that aren't part of the vertex array
+  // state. All of these are WebGL 2.0 only.
+  ctx._bufferBindings = {}
+
   ctx._activeProgram = null
   ctx._activeFramebuffers = { read: null, draw: null }
   ctx._activeRenderbuffer = null
