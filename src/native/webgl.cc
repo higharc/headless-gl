@@ -370,16 +370,16 @@ EGLsizeiANDROID GetProgramCacheBlob(const void *key, EGLsizeiANDROID keySize, vo
 
 // Caches linked program binaries on disk if HEADLESS_GL_PROGRAM_CACHE_DIR is set. The binaries are
 // stored in a subdirectory named after the ANGLE version, so a different ANGLE build never reads
-// them.
-void EnableProgramCache(EGLDisplay display) {
+// them. Returns whether the disk cache was enabled.
+bool EnableDiskProgramCache(EGLDisplay display) {
   const char *cacheDir = getenv("HEADLESS_GL_PROGRAM_CACHE_DIR");
   if (!cacheDir || !*cacheDir || !eglSetBlobCacheFuncsANDROID) {
-    return;
+    return false;
   }
   const char *extensions = eglQueryString(display, EGL_EXTENSIONS);
   const char *version = eglQueryString(display, EGL_VERSION);
   if (!extensions || !strstr(extensions, "EGL_ANDROID_blob_cache") || !version) {
-    return;
+    return false;
   }
 
   // Turn e.g. "1.5 (ANGLE 2.1.24078 git hash: ac6cda4cbd71)" into a safe directory name.
@@ -401,7 +401,7 @@ void EnableProgramCache(EGLDisplay display) {
   if (ec) {
     std::cerr << "headless-gl: cannot create program cache directory " << dir.string() << ": "
               << ec.message() << std::endl;
-    return;
+    return false;
   }
 
   {
@@ -412,6 +412,23 @@ void EnableProgramCache(EGLDisplay display) {
   // ANGLE only allows setting the functions once per display, so this may fail if the display is
   // re-initialized after eglTerminate. The same functions set earlier stay in effect in that case.
   eglGetError();
+  return true;
+}
+
+void EnableProgramCache(EGLDisplay display) {
+  if (EnableDiskProgramCache(display)) {
+    // ANGLE hands all cache entries to the blob cache functions, so the in-memory cache is unused.
+    return;
+  }
+
+  // ANGLE's in-memory program cache is disabled by default (its size limit is 0). The limit is in
+  // bytes, and 5 MB fits plenty of programs.
+  const char *extensions = eglQueryString(display, EGL_EXTENSIONS);
+  if (!eglProgramCacheResizeANGLE || !extensions ||
+      !strstr(extensions, "EGL_ANGLE_program_cache_control")) {
+    return;
+  }
+  eglProgramCacheResizeANGLE(display, 5 * 1024 * 1024, EGL_PROGRAM_CACHE_RESIZE_ANGLE);
 }
 
 bool WebGLRenderingContext::HAS_DISPLAY = false;
