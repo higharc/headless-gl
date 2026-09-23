@@ -188,31 +188,15 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
       return false
     }
 
-    // Record attribute attributeLocations
-    const numAttribs = this.getProgramParameter(program, this.ACTIVE_ATTRIBUTES)
-    const names = new Array(numAttribs)
-    program._attributes.length = numAttribs
-    for (let i = 0; i < numAttribs; ++i) {
-      names[i] = this.getActiveAttrib(program, i).name
-      program._attributes[i] = this.getAttribLocation(program, names[i]) | 0
-    }
-
     // Check attribute names
-    for (let i = 0; i < names.length; ++i) {
-      if (names[i].length > MAX_ATTRIBUTE_LENGTH) {
-        program._linkInfoLog = 'attribute ' + names[i] + ' is too long'
+    const numAttribs = this.getProgramParameter(program, this.ACTIVE_ATTRIBUTES)
+    for (let i = 0; i < numAttribs; ++i) {
+      const name = this.getActiveAttrib(program, i).name
+      if (name.length > MAX_ATTRIBUTE_LENGTH) {
+        program._linkInfoLog = 'attribute ' + name + ' is too long'
         return false
       }
     }
-
-    for (let i = 0; i < numAttribs; ++i) {
-      super.bindAttribLocation(
-        program._ | 0,
-        program._attributes[i],
-        names[i])
-    }
-
-    super.linkProgram(program._ | 0)
 
     const numUniforms = this.getProgramParameter(program, this.ACTIVE_UNIFORMS)
     program._uniforms.length = numUniforms
@@ -2564,7 +2548,6 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
     }
     if (this._checkWrapper(program, WebGLProgram)) {
       program._linkCount += 1
-      program._attributes = []
       const prevError = this.getError()
       super.linkProgram(program._ | 0)
       const error = this.getError()

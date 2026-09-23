@@ -8,7 +8,6 @@ class WebGLProgram extends Linkable {
     this._linkCount = 0
     this._linkStatus = false
     this._linkInfoLog = 'not linked'
-    this._attributes = []
     this._uniforms = []
   }
 
