@@ -3229,6 +3229,110 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
     this.uniform4i(location, value[0], value[1], value[2], value[3])
   }
 
+  uniform1ui (location, v0) {
+    if (!this._isWebGL2()) {
+      this.setError(this.INVALID_ENUM)
+      return
+    }
+    if (!this._checkUniformValid(location, v0, 'uniform1ui', 1, 'ui')) return
+    super.uniform1ui(location._ | 0, v0)
+  }
+
+  uniform1uiv (location, value) {
+    if (!this._isWebGL2()) {
+      this.setError(this.INVALID_ENUM)
+      return
+    }
+    if (!this._checkUniformValueValid(location, value, 'uniform1uiv', 1, 'ui')) return
+    if (location._array) {
+      const locs = location._array
+      for (let i = 0; i < locs.length && i < value.length; ++i) {
+        const loc = locs[i]
+        super.uniform1ui(loc, value[i])
+      }
+      return
+    }
+    super.uniform1ui(location._ | 0, value[0])
+  }
+
+  uniform2ui (location, v0, v1) {
+    if (!this._isWebGL2()) {
+      this.setError(this.INVALID_ENUM)
+      return
+    }
+    if (!this._checkUniformValid(location, v0, 'uniform2ui', 2, 'ui')) return
+    super.uniform2ui(location._ | 0, v0, v1)
+  }
+
+  uniform2uiv (location, value) {
+    if (!this._isWebGL2()) {
+      this.setError(this.INVALID_ENUM)
+      return
+    }
+    if (!this._checkUniformValueValid(location, value, 'uniform2uiv', 2, 'ui')) return
+    if (location._array) {
+      const locs = location._array
+      for (let i = 0; i < locs.length && 2 * i < value.length; ++i) {
+        const loc = locs[i]
+        super.uniform2ui(loc, value[2 * i], value[2 * i + 1])
+      }
+      return
+    }
+    super.uniform2ui(location._ | 0, value[0], value[1])
+  }
+
+  uniform3ui (location, v0, v1, v2) {
+    if (!this._isWebGL2()) {
+      this.setError(this.INVALID_ENUM)
+      return
+    }
+    if (!this._checkUniformValid(location, v0, 'uniform3ui', 3, 'ui')) return
+    super.uniform3ui(location._ | 0, v0, v1, v2)
+  }
+
+  uniform3uiv (location, value) {
+    if (!this._isWebGL2()) {
+      this.setError(this.INVALID_ENUM)
+      return
+    }
+    if (!this._checkUniformValueValid(location, value, 'uniform3uiv', 3, 'ui')) return
+    if (location._array) {
+      const locs = location._array
+      for (let i = 0; i < locs.length && 3 * i < value.length; ++i) {
+        const loc = locs[i]
+        super.uniform3ui(loc, value[3 * i], value[3 * i + 1], value[3 * i + 2])
+      }
+      return
+    }
+    super.uniform3ui(location._ | 0, value[0], value[1], value[2])
+  }
+
+  uniform4ui (location, v0, v1, v2, v3) {
+    if (!this._isWebGL2()) {
+      this.setError(this.INVALID_ENUM)
+      return
+    }
+    if (!this._checkUniformValid(location, v0, 'uniform4ui', 4, 'ui')) return
+    super.uniform4ui(location._ | 0, v0, v1, v2, v3)
+  }
+
+  uniform4uiv (location, value) {
+    if (!this._isWebGL2()) {
+      this.setError(this.INVALID_ENUM)
+      return
+    }
+    if (!this._checkUniformValueValid(location, value, 'uniform4uiv', 4, 'ui')) return
+    if (location._array) {
+      const locs = location._array
+      for (let i = 0; i < locs.length && 4 * i < value.length; ++i) {
+        const loc = locs[i]
+        super.uniform4ui(loc, value[4 * i], value[4 * i + 1], value[4 * i + 2], value[4 * i + 3])
+      }
+      return
+    }
+    super.uniform4ui(location._ | 0, value[0], value[1], value[2], value[3])
+  }
+
   uniformBlockBinding (program, uniformBlockIndex, uniformBlockBinding) {
     if (!this._isWebGL2()) {
       this.setError(this.INVALID_ENUM)
@@ -3246,15 +3350,15 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
     }
   }
 
-  _checkUniformMatrix (location, transpose, value, name, count) {
+  _checkUniformMatrix (location, transpose, value, name, size) {
     if (!checkObject(location) ||
       typeof value !== 'object') {
       throw new TypeError(name + '(WebGLUniformLocation, Boolean, Array)')
-    } else if (!!transpose ||
+    } else if ((!!transpose && !this._isWebGL2()) ||
       typeof value !== 'object' ||
       value === null ||
       !value.length ||
-      value.length % count * count !== 0) {
+      value.length % size !== 0) {
       this.setError(this.INVALID_VALUE)
       return false
     }
@@ -3265,7 +3369,7 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
       return false
     }
 
-    if (value.length === count * count) {
+    if (value.length === size) {
       return true
     } else if (location._array) {
       return true
@@ -3275,7 +3379,7 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
   }
 
   uniformMatrix2fv (location, transpose, value) {
-    if (!this._checkUniformMatrix(location, transpose, value, 'uniformMatrix2fv', 2)) return
+    if (!this._checkUniformMatrix(location, transpose, value, 'uniformMatrix2fv', 4)) return
     const data = new Float32Array(value)
     super.uniformMatrix2fv(
       location._ | 0,
@@ -3284,7 +3388,7 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
   }
 
   uniformMatrix3fv (location, transpose, value) {
-    if (!this._checkUniformMatrix(location, transpose, value, 'uniformMatrix3fv', 3)) return
+    if (!this._checkUniformMatrix(location, transpose, value, 'uniformMatrix3fv', 9)) return
     const data = new Float32Array(value)
     super.uniformMatrix3fv(
       location._ | 0,
@@ -3293,9 +3397,87 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
   }
 
   uniformMatrix4fv (location, transpose, value) {
-    if (!this._checkUniformMatrix(location, transpose, value, 'uniformMatrix4fv', 4)) return
+    if (!this._checkUniformMatrix(location, transpose, value, 'uniformMatrix4fv', 16)) return
     const data = new Float32Array(value)
     super.uniformMatrix4fv(
+      location._ | 0,
+      !!transpose,
+      data)
+  }
+
+  uniformMatrix2x3fv (location, transpose, value) {
+    if (!this._isWebGL2()) {
+      this.setError(this.INVALID_ENUM)
+      return
+    }
+    if (!this._checkUniformMatrix(location, transpose, value, 'uniformMatrix2x3fv', 6)) return
+    const data = new Float32Array(value)
+    super.uniformMatrix2x3fv(
+      location._ | 0,
+      !!transpose,
+      data)
+  }
+
+  uniformMatrix3x2fv (location, transpose, value) {
+    if (!this._isWebGL2()) {
+      this.setError(this.INVALID_ENUM)
+      return
+    }
+    if (!this._checkUniformMatrix(location, transpose, value, 'uniformMatrix3x2fv', 6)) return
+    const data = new Float32Array(value)
+    super.uniformMatrix3x2fv(
+      location._ | 0,
+      !!transpose,
+      data)
+  }
+
+  uniformMatrix2x4fv (location, transpose, value) {
+    if (!this._isWebGL2()) {
+      this.setError(this.INVALID_ENUM)
+      return
+    }
+    if (!this._checkUniformMatrix(location, transpose, value, 'uniformMatrix2x4fv', 8)) return
+    const data = new Float32Array(value)
+    super.uniformMatrix2x4fv(
+      location._ | 0,
+      !!transpose,
+      data)
+  }
+
+  uniformMatrix4x2fv (location, transpose, value) {
+    if (!this._isWebGL2()) {
+      this.setError(this.INVALID_ENUM)
+      return
+    }
+    if (!this._checkUniformMatrix(location, transpose, value, 'uniformMatrix4x2fv', 8)) return
+    const data = new Float32Array(value)
+    super.uniformMatrix4x2fv(
+      location._ | 0,
+      !!transpose,
+      data)
+  }
+
+  uniformMatrix3x4fv (location, transpose, value) {
+    if (!this._isWebGL2()) {
+      this.setError(this.INVALID_ENUM)
+      return
+    }
+    if (!this._checkUniformMatrix(location, transpose, value, 'uniformMatrix3x4fv', 12)) return
+    const data = new Float32Array(value)
+    super.uniformMatrix3x4fv(
+      location._ | 0,
+      !!transpose,
+      data)
+  }
+
+  uniformMatrix4x3fv (location, transpose, value) {
+    if (!this._isWebGL2()) {
+      this.setError(this.INVALID_ENUM)
+      return
+    }
+    if (!this._checkUniformMatrix(location, transpose, value, 'uniformMatrix4x3fv', 12)) return
+    const data = new Float32Array(value)
+    super.uniformMatrix4x3fv(
       location._ | 0,
       !!transpose,
       data)

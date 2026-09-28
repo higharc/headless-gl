@@ -75,22 +75,69 @@ tape('webgl2 getUniform types', function (t) {
   t.ok(gl.getProgramParameter(program, gl.LINK_STATUS), 'the program links')
   gl.useProgram(program)
 
-  // Note: the uniform1ui/uniform3uiv/uniformMatrix2x3fv setters have no
-  // wrapper yet and can't take a WebGLUniformLocation, so the uniforms that
-  // only they can set are read back at their default value.
+  gl.uniform1ui(gl.getUniformLocation(program, 'uScalar'), 7)
   const scalar = gl.getUniform(program, gl.getUniformLocation(program, 'uScalar'))
-  t.equals(scalar, 0, 'uint is read back')
+  t.equals(scalar, 7, 'uint is read back')
 
+  gl.uniform3uiv(gl.getUniformLocation(program, 'uVector'), [1, 2, 3])
   const vector = gl.getUniform(program, gl.getUniformLocation(program, 'uVector'))
   t.ok(vector instanceof Uint32Array, 'uvec3 is read back as a Uint32Array')
-  t.equals(vector.length, 3, 'uvec3 has three components')
+  t.deepEquals(Array.from(vector), [1, 2, 3], 'uvec3 is read back')
 
+  gl.uniform3ui(gl.getUniformLocation(program, 'uVector'), 4, 5, 6)
+  t.deepEquals(Array.from(gl.getUniform(program, gl.getUniformLocation(program, 'uVector'))), [4, 5, 6], 'uniform3ui sets uvec3')
+  t.equals(gl.getError(), gl.NO_ERROR, 'no error from uint setters')
+
+  gl.uniformMatrix2x3fv(gl.getUniformLocation(program, 'uMatrix'), false, [1, 2, 3, 4, 5, 6])
   const matrix = gl.getUniform(program, gl.getUniformLocation(program, 'uMatrix'))
   t.ok(matrix instanceof Float32Array, 'mat2x3 is read back as a Float32Array')
-  t.equals(matrix.length, 6, 'mat2x3 has six components')
+  t.deepEquals(Array.from(matrix), [1, 2, 3, 4, 5, 6], 'mat2x3 is read back')
+
+  gl.uniformMatrix2x3fv(gl.getUniformLocation(program, 'uMatrix'), true, [1, 2, 3, 4, 5, 6])
+  t.deepEquals(Array.from(gl.getUniform(program, gl.getUniformLocation(program, 'uMatrix'))), [1, 3, 5, 2, 4, 6], 'mat2x3 can be set transposed')
+
+  gl.uniformMatrix2x3fv(gl.getUniformLocation(program, 'uMatrix'), false, [1, 2, 3, 4])
+  t.equals(gl.getError(), gl.INVALID_VALUE, 'wrong matrix data length is rejected')
 
   gl.uniform1i(gl.getUniformLocation(program, 'uSampler'), 3)
   t.equals(gl.getUniform(program, gl.getUniformLocation(program, 'uSampler')), 3, 'sampler2DArray is read back')
+
+  t.end()
+})
+
+tape('webgl2 uint uniform setters with null location', function (t) {
+  const gl = createContext(10, 10, { createWebGL2Context: true })
+  const program = makeProgram(gl, VERT_SRC, FRAG_SRC)
+  gl.useProgram(program)
+
+  gl.uniform1ui(null, 1)
+  gl.uniform2ui(null, 1, 2)
+  gl.uniform3ui(null, 1, 2, 3)
+  gl.uniform4ui(null, 1, 2, 3, 4)
+  gl.uniform1uiv(null, [1])
+  gl.uniform2uiv(null, [1, 2])
+  gl.uniform3uiv(null, [1, 2, 3])
+  gl.uniform4uiv(null, new Uint32Array([1, 2, 3, 4]))
+  t.equals(gl.getError(), gl.NO_ERROR, 'null location is silently ignored')
+
+  gl.uniform1ui(gl.getUniformLocation(program, 'uVector'), 1)
+  t.equals(gl.getError(), gl.INVALID_OPERATION, 'size mismatch is rejected')
+
+  t.end()
+})
+
+tape('webgl2 non-square matrix uniform setters with null location', function (t) {
+  const gl = createContext(10, 10, { createWebGL2Context: true })
+  const program = makeProgram(gl, VERT_SRC, FRAG_SRC)
+  gl.useProgram(program)
+
+  gl.uniformMatrix2x3fv(null, false, new Float32Array(6))
+  gl.uniformMatrix3x2fv(null, false, new Float32Array(6))
+  gl.uniformMatrix2x4fv(null, false, new Float32Array(8))
+  gl.uniformMatrix4x2fv(null, false, new Float32Array(8))
+  gl.uniformMatrix3x4fv(null, false, new Float32Array(12))
+  gl.uniformMatrix4x3fv(null, false, new Float32Array(12))
+  t.equals(gl.getError(), gl.NO_ERROR, 'null location is silently ignored')
 
   t.end()
 })

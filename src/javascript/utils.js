@@ -102,21 +102,25 @@ function uniformTypeSize (type) {
     case gl.BOOL_VEC4:
     case gl.INT_VEC4:
     case gl.FLOAT_VEC4:
+    case gl.UNSIGNED_INT_VEC4:
       return 4
 
     case gl.BOOL_VEC3:
     case gl.INT_VEC3:
     case gl.FLOAT_VEC3:
+    case gl.UNSIGNED_INT_VEC3:
       return 3
 
     case gl.BOOL_VEC2:
     case gl.INT_VEC2:
     case gl.FLOAT_VEC2:
+    case gl.UNSIGNED_INT_VEC2:
       return 2
 
     case gl.BOOL:
     case gl.INT:
     case gl.FLOAT:
+    case gl.UNSIGNED_INT:
     case gl.SAMPLER_2D:
     case gl.SAMPLER_CUBE:
       return 1
