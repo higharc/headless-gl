@@ -198,3 +198,39 @@ tape('webgl2 bufferSubData honors srcOffset and length', function (t) {
 
   t.end()
 })
+
+tape('webgl2 texImage3D accepts null pixels', function (t) {
+  const gl = createContext(10, 10, { createWebGL2Context: true })
+
+  // three.js allocates 3D and array render targets this way.
+  for (const target of [gl.TEXTURE_2D_ARRAY, gl.TEXTURE_3D]) {
+    const texture = gl.createTexture()
+    gl.bindTexture(target, texture)
+    t.doesNotThrow(function () {
+      gl.texImage3D(target, 0, gl.RGBA8, 4, 4, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
+    }, 'texImage3D(' + target + ', ..., null) does not throw')
+    t.equals(gl.getError(), gl.NO_ERROR, 'texImage3D(' + target + ', ..., null) succeeds')
+  }
+
+  t.end()
+})
+
+tape('webgl2 texImage3D honors the byte offset of the pixel view', function (t) {
+  const gl = createContext(10, 10, { createWebGL2Context: true })
+  const texture = gl.createTexture()
+  gl.bindTexture(gl.TEXTURE_2D_ARRAY, texture)
+
+  const backing = new Uint8Array(8)
+  backing.set([1, 2, 3, 4, 5, 6, 7, 8])
+  gl.texImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.RGBA8, 1, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, backing.subarray(4))
+  t.equals(gl.getError(), gl.NO_ERROR, 'texImage3D with a subarray succeeds')
+
+  const framebuffer = gl.createFramebuffer()
+  gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer)
+  gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, texture, 0, 0)
+  const pixel = new Uint8Array(4)
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel)
+  t.same(Array.from(pixel), [5, 6, 7, 8], 'texel data starts at the view byte offset')
+
+  t.end()
+})
