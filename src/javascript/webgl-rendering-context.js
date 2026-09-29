@@ -2981,7 +2981,17 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
     }
 
     // fixed, int and unsigned int aren't allowed in WebGL
-    const byteSize = typeSize(type)
+    let byteSize = typeSize(type)
+    let packed = false
+    if (this._isWebGL2()) {
+      if (type === this.HALF_FLOAT) {
+        byteSize = 2
+      } else if (type === this.INT_2_10_10_10_REV || type === this.UNSIGNED_INT_2_10_10_10_REV) {
+        // All components are packed into a single 32-bit value
+        byteSize = 4
+        packed = true
+      }
+    }
     if (byteSize === 0 ||
       type === this.INT ||
       type === this.UNSIGNED_INT) {
@@ -3002,15 +3012,22 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
     }
 
     // Call vertex attrib pointer
+    this._saveError()
     super.vertexAttribPointer(index, size, type, normalized, stride, offset)
+    const error = this.getError()
+    this._restoreError(error)
+    if (error !== this.NO_ERROR) {
+      return
+    }
 
     // Update the vertex state object and references.
+    const pointerSize = packed ? byteSize : size * byteSize
     this._vertexObjectState.setVertexAttribPointer(
       /* buffer */ this._vertexGlobalState._arrayBufferBinding,
       /* index */ index,
-      /* pointerSize */ size * byteSize,
+      /* pointerSize */ pointerSize,
       /* pointerOffset */ offset,
-      /* pointerStride */ stride || (size * byteSize),
+      /* pointerStride */ stride || pointerSize,
       /* pointerType */ type,
       /* pointerNormal */ normalized,
       /* inputStride */ stride,

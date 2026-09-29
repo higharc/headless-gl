@@ -234,3 +234,30 @@ tape('webgl2 texImage3D honors the byte offset of the pixel view', function (t) 
 
   t.end()
 })
+
+tape('webgl2 vertexAttribPointer accepts HALF_FLOAT and packed types', function (t) {
+  const gl = createContext(10, 10, { createWebGL2Context: true })
+  const buffer = gl.createBuffer()
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer)
+  gl.bufferData(gl.ARRAY_BUFFER, 64, gl.STATIC_DRAW)
+
+  // three.js uses HALF_FLOAT for Float16BufferAttribute.
+  gl.vertexAttribPointer(0, 3, gl.HALF_FLOAT, false, 6, 2)
+  t.equals(gl.getError(), gl.NO_ERROR, 'HALF_FLOAT succeeds')
+  t.equals(gl.getVertexAttrib(0, gl.VERTEX_ATTRIB_ARRAY_TYPE), gl.HALF_FLOAT, 'type is HALF_FLOAT')
+
+  gl.vertexAttribPointer(0, 3, gl.HALF_FLOAT, false, 0, 1)
+  t.equals(gl.getError(), gl.INVALID_OPERATION, 'HALF_FLOAT offset must be a multiple of 2')
+
+  for (const type of [gl.INT_2_10_10_10_REV, gl.UNSIGNED_INT_2_10_10_10_REV]) {
+    gl.vertexAttribPointer(1, 4, type, true, 0, 4)
+    t.equals(gl.getError(), gl.NO_ERROR, 'packed type ' + type + ' succeeds')
+    t.equals(gl.getVertexAttrib(1, gl.VERTEX_ATTRIB_ARRAY_TYPE), type, 'type is ' + type)
+
+    gl.vertexAttribPointer(1, 3, type, true, 0, 4)
+    t.equals(gl.getError(), gl.INVALID_OPERATION, 'packed type ' + type + ' requires size 4')
+    t.equals(gl.getVertexAttrib(1, gl.VERTEX_ATTRIB_ARRAY_SIZE), 4, 'failed call does not change state')
+  }
+
+  t.end()
+})
