@@ -170,3 +170,31 @@ tape('webgl2 getBufferSubData reads back buffer contents', function (t) {
 
   t.end()
 })
+
+tape('webgl2 bufferSubData honors srcOffset and length', function (t) {
+  const gl = createContext(10, 10, { createWebGL2Context: true })
+  const buffer = gl.createBuffer()
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer)
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(6), gl.STATIC_DRAW)
+
+  // This is how three.js uploads BufferAttribute update ranges.
+  const source = new Float32Array([10, 20, 30, 40, 50, 60])
+  gl.bufferSubData(gl.ARRAY_BUFFER, 2 * 4, source, 2, 3)
+  t.equals(gl.getError(), gl.NO_ERROR, 'bufferSubData with srcOffset and length succeeds')
+
+  const result = new Float32Array(6)
+  gl.getBufferSubData(gl.ARRAY_BUFFER, 0, result)
+  t.same(Array.from(result), [0, 0, 30, 40, 50, 0], 'only the requested range is written')
+
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, source, 4)
+  gl.getBufferSubData(gl.ARRAY_BUFFER, 0, result)
+  t.same(Array.from(result), [50, 60, 30, 40, 50, 0], 'length 0 or omitted copies to the end of the source')
+
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, source, 4, 3)
+  t.equals(gl.getError(), gl.INVALID_VALUE, 'a source range past the end is an invalid value')
+
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, source, 7)
+  t.equals(gl.getError(), gl.INVALID_VALUE, 'srcOffset past the end is an invalid value')
+
+  t.end()
+})

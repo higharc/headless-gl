@@ -1167,7 +1167,7 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
     }
   }
 
-  bufferSubData (target, offset, data) {
+  bufferSubData (target, offset, data, srcOffset, length) {
     target |= 0
     offset |= 0
 
@@ -1203,6 +1203,21 @@ class WebGLRenderingContextHelper extends NativeWebGLRenderingContext {
     } else {
       this.setError(this.INVALID_VALUE)
       return
+    }
+
+    // WebGL 2.0 overload: srcOffset and length are in elements of the source view
+    if (this._isWebGL2() && srcOffset !== undefined && !(data instanceof ArrayBuffer)) {
+      srcOffset |= 0
+      length |= 0
+      const elementSize = data.BYTES_PER_ELEMENT || 1
+      const elementCount = u8Data.length / elementSize
+      if (srcOffset < 0 || length < 0 || srcOffset > elementCount ||
+        (length !== 0 && srcOffset + length > elementCount)) {
+        this.setError(this.INVALID_VALUE)
+        return
+      }
+      const end = length === 0 ? u8Data.length : (srcOffset + length) * elementSize
+      u8Data = u8Data.subarray(srcOffset * elementSize, end)
     }
 
     if (offset + u8Data.length > active._size) {
