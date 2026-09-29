@@ -261,3 +261,29 @@ tape('webgl2 vertexAttribPointer accepts HALF_FLOAT and packed types', function 
 
   t.end()
 })
+
+tape('webgl2 deleteTexture unbinds 3D and array textures from all units', function (t) {
+  const gl = createContext(10, 10, { createWebGL2Context: true })
+
+  for (const [target, binding] of [
+    [gl.TEXTURE_2D_ARRAY, gl.TEXTURE_BINDING_2D_ARRAY],
+    [gl.TEXTURE_3D, gl.TEXTURE_BINDING_3D]
+  ]) {
+    const texture = gl.createTexture()
+    gl.activeTexture(gl.TEXTURE1)
+    gl.bindTexture(target, texture)
+    gl.activeTexture(gl.TEXTURE0)
+
+    gl.deleteTexture(texture)
+    t.equals(gl.getError(), gl.NO_ERROR, 'deleteTexture(' + target + ' texture) succeeds')
+    t.equals(gl.getParameter(gl.ACTIVE_TEXTURE), gl.TEXTURE0, 'active texture unit is restored')
+    t.equals(texture._, 0, 'texture is deleted')
+
+    // getParameter returns the native texture id for these bindings rather than a wrapper.
+    gl.activeTexture(gl.TEXTURE1)
+    t.notOk(gl.getParameter(binding), 'texture is unbound from unit 1')
+    gl.activeTexture(gl.TEXTURE0)
+  }
+
+  t.end()
+})
