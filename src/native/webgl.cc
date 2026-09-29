@@ -1,11 +1,8 @@
 #include <algorithm>
 #include <array>
-#include <cctype>
 #include <cstring>
-#include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <mutex>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -302,126 +299,7 @@ RENDERDOC_API_1_6_0 *WaitForRenderDoc(const std::string &capturePath) {
   }
 }
 
-// Optional on-disk cache for ANGLE program binaries, shared between processes. The blob cache
-// callbacks have no user data argument and ANGLE may call them from its worker threads, so they
-// only touch this static state, guarded by a mutex.
-std::filesystem::path g_programCacheDir;
-std::mutex g_programCacheMutex;
-
-std::filesystem::path GetProgramCacheBlobPath(const void *key, EGLsizeiANDROID keySize) {
-  static const char *hex = "0123456789abcdef";
-  const auto *bytes = static_cast<const unsigned char *>(key);
-  std::string name;
-  for (EGLsizeiANDROID i = 0; i < keySize; ++i) {
-    name += hex[bytes[i] >> 4];
-    name += hex[bytes[i] & 15];
-  }
-  return g_programCacheDir / (name + ".bin");
-}
-
-void SetProgramCacheBlob(const void *key, EGLsizeiANDROID keySize, const void *value,
-                         EGLsizeiANDROID valueSize) {
-  std::lock_guard<std::mutex> lock(g_programCacheMutex);
-  const std::filesystem::path path = GetProgramCacheBlobPath(key, keySize);
-#ifdef _WIN32
-  unsigned long pid = GetCurrentProcessId();
-#else
-  unsigned long pid = getpid();
-#endif
-  std::filesystem::path tmp = path;
-  tmp += "." + std::to_string(pid) + ".tmp";
-  std::error_code ec;
-  {
-    std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-    if (!out.write(static_cast<const char *>(value), valueSize)) {
-      out.close();
-      std::filesystem::remove(tmp, ec);
-      return;
-    }
-  }
-  // Write to a temporary file and rename it so that other processes never see a partial blob.
-  // Renaming may fail if another process holds the target open. The same key always maps to the
-  // same binary, so the existing file is as good as ours.
-  std::filesystem::rename(tmp, path, ec);
-  if (ec) {
-    std::filesystem::remove(tmp, ec);
-  }
-}
-
-EGLsizeiANDROID GetProgramCacheBlob(const void *key, EGLsizeiANDROID keySize, void *value,
-                                    EGLsizeiANDROID valueSize) {
-  std::lock_guard<std::mutex> lock(g_programCacheMutex);
-  std::ifstream in(GetProgramCacheBlobPath(key, keySize), std::ios::binary | std::ios::ate);
-  if (!in) {
-    return 0;
-  }
-  const EGLsizeiANDROID size = static_cast<EGLsizeiANDROID>(in.tellg());
-  if (size <= 0) {
-    return 0;
-  }
-  // ANGLE first queries the size with valueSize 0, then calls again with a large enough buffer.
-  if (size <= valueSize) {
-    in.seekg(0);
-    if (!in.read(static_cast<char *>(value), size)) {
-      return 0;
-    }
-  }
-  return size;
-}
-
-// Caches linked program binaries on disk if HEADLESS_GL_PROGRAM_CACHE_DIR is set. The binaries are
-// stored in a subdirectory named after the ANGLE version, so a different ANGLE build never reads
-// them. Returns whether the disk cache was enabled.
-bool EnableDiskProgramCache(EGLDisplay display) {
-  const char *cacheDir = getenv("HEADLESS_GL_PROGRAM_CACHE_DIR");
-  if (!cacheDir || !*cacheDir || !eglSetBlobCacheFuncsANDROID) {
-    return false;
-  }
-  const char *extensions = eglQueryString(display, EGL_EXTENSIONS);
-  const char *version = eglQueryString(display, EGL_VERSION);
-  if (!extensions || !strstr(extensions, "EGL_ANDROID_blob_cache") || !version) {
-    return false;
-  }
-
-  // Turn e.g. "1.5 (ANGLE 2.1.24078 git hash: ac6cda4cbd71)" into a safe directory name.
-  std::string subdir;
-  for (const char *c = version; *c; ++c) {
-    if (std::isalnum(static_cast<unsigned char>(*c)) || *c == '.') {
-      subdir += *c;
-    } else if (!subdir.empty() && subdir.back() != '-') {
-      subdir += '-';
-    }
-  }
-  if (!subdir.empty() && subdir.back() == '-') {
-    subdir.pop_back();
-  }
-
-  std::filesystem::path dir = std::filesystem::path(cacheDir) / subdir;
-  std::error_code ec;
-  std::filesystem::create_directories(dir, ec);
-  if (ec) {
-    std::cerr << "headless-gl: cannot create program cache directory " << dir.string() << ": "
-              << ec.message() << std::endl;
-    return false;
-  }
-
-  {
-    std::lock_guard<std::mutex> lock(g_programCacheMutex);
-    g_programCacheDir = dir;
-  }
-  eglSetBlobCacheFuncsANDROID(display, SetProgramCacheBlob, GetProgramCacheBlob);
-  // ANGLE only allows setting the functions once per display, so this may fail if the display is
-  // re-initialized after eglTerminate. The same functions set earlier stay in effect in that case.
-  eglGetError();
-  return true;
-}
-
 void EnableProgramCache(EGLDisplay display) {
-  if (EnableDiskProgramCache(display)) {
-    // ANGLE hands all cache entries to the blob cache functions, so the in-memory cache is unused.
-    return;
-  }
-
   // ANGLE's in-memory program cache is disabled by default (its size limit is 0). The limit is in
   // bytes, and 5 MB fits plenty of programs.
   const char *extensions = eglQueryString(display, EGL_EXTENSIONS);

@@ -168,8 +168,6 @@ $ sudo apt-get install -y build-essential libxi-dev libglu1-mesa-dev libglew-dev
 
 By default, linked program binaries are cached in memory, so linking the same program again in the same process is fast. The cache holds up to 5 MB of binaries.
 
-To also reuse binaries across runs and processes, set the `HEADLESS_GL_PROGRAM_CACHE_DIR` environment variable to a directory path. This replaces the in-memory cache. ANGLE then stores linked program binaries there and loads them instead of linking again when the same program is linked in a later run. Several processes can share the directory at the same time. Binaries are kept in a subdirectory named after the ANGLE version, so binaries built by a different ANGLE build are never loaded. Nothing removes old entries, so delete the directory yourself when it grows too large.
-
 ### How can I use headless-gl with a continuous integration service?
 
 `headless-gl` should work out of the box on most CI systems. Some notes on specific CI systems:
