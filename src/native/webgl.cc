@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <cstring>
@@ -2614,10 +2615,41 @@ GL_METHOD(GetBufferSubData) {
   GL_BOILERPLATE;
   GLenum target = Nan::To<int32_t>(info[0]).ToChecked();
   GLintptr srcByteOffset = Nan::To<int64_t>(info[1]).ToChecked();
-  auto buffer = info[2].As<v8::ArrayBufferView>();
-  void *bufferPtr = buffer->Buffer()->GetBackingStore()->Data();
-  GLsizeiptr bufferSize = buffer->ByteLength();
-  // TODO:  glGetBufferSubData(target, srcByteOffset, bufferSize, bufferPtr);
+  Nan::TypedArrayContents<unsigned char> dst(info[2]);
+  auto dstView = info[2].As<v8::ArrayBufferView>();
+  size_t elementSize = 1;
+  if (dstView->IsTypedArray()) {
+    elementSize = dstView->ByteLength() / std::max<size_t>(dstView.As<v8::TypedArray>()->Length(), 1);
+  }
+  size_t dstOffset = info[3]->IsUndefined() ? 0 : Nan::To<uint32_t>(info[3]).ToChecked();
+  size_t dstLength = dst.length() / elementSize;
+  if (dstOffset > dstLength) {
+    inst->setError(GL_INVALID_VALUE);
+    return;
+  }
+  size_t length = dstLength - dstOffset;
+  if (!info[4]->IsUndefined()) {
+    size_t requestedLength = Nan::To<uint32_t>(info[4]).ToChecked();
+    if (requestedLength != 0) {
+      if (requestedLength > length) {
+        inst->setError(GL_INVALID_VALUE);
+        return;
+      }
+      length = requestedLength;
+    }
+  }
+  GLsizeiptr byteLength = length * elementSize;
+  if (byteLength == 0) {
+    return;
+  }
+
+  // WebGL 2.0 has no direct buffer readback in GLES, so map the range for reading instead.
+  void *mapped = glMapBufferRange(target, srcByteOffset, byteLength, GL_MAP_READ_BIT);
+  if (mapped == nullptr) {
+    return;
+  }
+  memcpy(*dst + dstOffset * elementSize, mapped, byteLength);
+  glUnmapBuffer(target);
 }
 
 GL_METHOD(BlitFramebuffer) {

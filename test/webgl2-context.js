@@ -141,3 +141,32 @@ tape('webgl2 non-square matrix uniform setters with null location', function (t)
 
   t.end()
 })
+
+tape('webgl2 getBufferSubData reads back buffer contents', function (t) {
+  const gl = createContext(10, 10, { createWebGL2Context: true })
+  const buffer = gl.createBuffer()
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer)
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([1, 2, 3, 4, 5, 6]), gl.STATIC_DRAW)
+
+  const all = new Float32Array(6)
+  gl.getBufferSubData(gl.ARRAY_BUFFER, 0, all)
+  t.equals(gl.getError(), gl.NO_ERROR, 'getBufferSubData succeeds')
+  t.same(Array.from(all), [1, 2, 3, 4, 5, 6], 'whole buffer is read back')
+
+  const tail = new Float32Array(2)
+  gl.getBufferSubData(gl.ARRAY_BUFFER, 4 * 4, tail)
+  t.same(Array.from(tail), [5, 6], 'srcByteOffset is honored')
+
+  const withDstOffset = new Float32Array(4)
+  gl.getBufferSubData(gl.ARRAY_BUFFER, 0, withDstOffset, 1, 2)
+  t.same(Array.from(withDstOffset), [0, 1, 2, 0], 'dstOffset and length are honored')
+
+  const backing = new Float32Array(4)
+  gl.getBufferSubData(gl.ARRAY_BUFFER, 4, backing.subarray(2))
+  t.same(Array.from(backing), [0, 0, 2, 3], 'byteOffset of the destination view is honored')
+
+  gl.getBufferSubData(gl.ARRAY_BUFFER, 0, new Float32Array(2), 3)
+  t.equals(gl.getError(), gl.INVALID_VALUE, 'dstOffset past the end is an invalid value')
+
+  t.end()
+})
