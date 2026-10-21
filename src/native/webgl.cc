@@ -2974,31 +2974,81 @@ GL_METHOD(DrawBuffers) {
   delete[] bufferList;
 }
 
+template <typename T, typename Conversion>
+bool ReadClearBufferValues(Nan::NAN_METHOD_ARGS_TYPE info, WebGLRenderingContext *context,
+                          GLenum buffer, GLenum singleValueBuffer, bool validTypedArray,
+                          T (&values)[4]) {
+  if (!info[2]->IsArray() && !validTypedArray) {
+    Nan::ThrowTypeError("clearBuffer values must be an array or a matching typed array");
+    return false;
+  }
+  if (validTypedArray && info[2].As<v8::TypedArray>()->Buffer()->WasDetached()) {
+    Nan::ThrowTypeError("clearBuffer values must not be detached");
+    return false;
+  }
+  if (buffer != GL_COLOR && buffer != singleValueBuffer) {
+    context->setError(GL_INVALID_ENUM);
+    return false;
+  }
+
+  uint32_t offset = 0;
+  if (info.Length() > 3 && !Nan::To<uint32_t>(info[3]).To(&offset)) {
+    return false;
+  }
+  const size_t length = info[2]->IsArray() ? info[2].As<v8::Array>()->Length()
+                                         : info[2].As<v8::TypedArray>()->Length();
+  const size_t count = buffer == GL_COLOR ? 4 : 1;
+  if (offset > length || count > length - offset) {
+    context->setError(GL_INVALID_VALUE);
+    return false;
+  }
+
+  // Indexed access honors typed-array views and converts ordinary arrays without
+  // exposing backing-store pointers to getters that can detach or resize them.
+  auto source = info[2].As<v8::Object>();
+  for (size_t i = 0; i < count; ++i) {
+    v8::Local<v8::Value> value;
+    Conversion converted;
+    if (!Nan::Get(source, offset + i).ToLocal(&value) ||
+        !Nan::To<Conversion>(value).To(&converted)) {
+      return false;
+    }
+    values[i] = static_cast<T>(converted);
+  }
+  return context->setActive();
+}
+
 GL_METHOD(ClearBufferfv) {
   GL_BOILERPLATE;
   GLenum buffer = Nan::To<int32_t>(info[0]).ToChecked();
   GLint drawbuffer = Nan::To<int32_t>(info[1]).ToChecked();
-  auto values = info[2].As<v8::ArrayBufferView>();
-  GLfloat *bufferPtr = static_cast<GLfloat *>(values->Buffer()->GetBackingStore()->Data());
-  glClearBufferfv(buffer, drawbuffer, bufferPtr);
+  GLfloat values[4];
+  if (ReadClearBufferValues<GLfloat, double>(info, inst, buffer, GL_DEPTH,
+                                           info[2]->IsFloat32Array(), values)) {
+    glClearBufferfv(buffer, drawbuffer, values);
+  }
 }
 
 GL_METHOD(ClearBufferiv) {
   GL_BOILERPLATE;
   GLenum buffer = Nan::To<int32_t>(info[0]).ToChecked();
   GLint drawbuffer = Nan::To<int32_t>(info[1]).ToChecked();
-  auto values = info[2].As<v8::ArrayBufferView>();
-  GLint *bufferPtr = static_cast<GLint *>(values->Buffer()->GetBackingStore()->Data());
-  glClearBufferiv(buffer, drawbuffer, bufferPtr);
+  GLint values[4];
+  if (ReadClearBufferValues<GLint, int32_t>(info, inst, buffer, GL_STENCIL,
+                                         info[2]->IsInt32Array(), values)) {
+    glClearBufferiv(buffer, drawbuffer, values);
+  }
 }
 
 GL_METHOD(ClearBufferuiv) {
   GL_BOILERPLATE;
   GLenum buffer = Nan::To<int32_t>(info[0]).ToChecked();
   GLint drawbuffer = Nan::To<int32_t>(info[1]).ToChecked();
-  auto values = info[2].As<v8::ArrayBufferView>();
-  GLuint *bufferPtr = static_cast<GLuint *>(values->Buffer()->GetBackingStore()->Data());
-  glClearBufferuiv(buffer, drawbuffer, bufferPtr);
+  GLuint values[4];
+  if (ReadClearBufferValues<GLuint, uint32_t>(info, inst, buffer, GL_COLOR,
+                                           info[2]->IsUint32Array(), values)) {
+    glClearBufferuiv(buffer, drawbuffer, values);
+  }
 }
 
 GL_METHOD(ClearBufferfi) {

@@ -9,6 +9,13 @@ It aspires to fully conform to the [WebGL 1.0.3 specification](https://www.khron
 
 ## Higharc releases
 
+`9.0.0-rc.10-higharc.8` accepts ordinary arrays and matching typed arrays for
+`clearBufferfv`, `clearBufferiv`, and `clearBufferuiv`, including typed-array views
+and source offsets. Invalid ranges report `INVALID_VALUE`; invalid value types
+throw `TypeError` instead of reaching unchecked native casts. Run
+`xvfb-run -a node test/webgl2-clear-buffers.js` for integer/float attachment
+readback, depth/stencil inputs, offset bounds, detached views, and conversion errors.
+
 `9.0.0-rc.10-higharc.7` restores the interrupted GL context when garbage collection
 disposes another context during a native call, preventing silently lost uniform
 uploads. `test/context-disposal.js` covers collection during matrix uploads in
