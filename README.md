@@ -7,6 +7,16 @@
 
 It aspires to fully conform to the [WebGL 1.0.3 specification](https://www.khronos.org/registry/webgl/specs/1.0.3/).
 
+## Higharc releases
+
+`9.0.0-rc.10-higharc.7` restores the interrupted GL context when garbage collection
+disposes another context during a native call, preventing silently lost uniform
+uploads. `test/context-disposal.js` covers collection during matrix uploads in
+WebGL1 and WebGL2, uniform readback, rendered pixels, and explicit disposal.
+
+Run the regression with `node test/context-disposal.js` (under `xvfb-run -a` on
+headless Linux); it launches its GC cases in a `--expose-gc` subprocess.
+
 ## Example
 
 ```javascript

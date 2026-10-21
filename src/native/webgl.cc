@@ -552,6 +552,8 @@ void WebGLRenderingContext::setError(GLenum error) {
 }
 
 void WebGLRenderingContext::dispose() {
+  WebGLRenderingContext *previousContext = ACTIVE;
+
   // End RenderDoc capture before destroying context
   if (rdoc_api) {
     rdoc_api->EndFrameCapture(NULL, NULL);
@@ -611,6 +613,12 @@ void WebGLRenderingContext::dispose() {
   // Destroy surface and context
   eglDestroySurface(DISPLAY, surface);
   eglDestroyContext(DISPLAY, context);
+
+  // GC can collect another context while a native GL call materializes a typed
+  // array's backing store. Resume that call with its original context current.
+  if (previousContext && previousContext != this) {
+    previousContext->setActive();
+  }
 }
 
 WebGLRenderingContext::~WebGLRenderingContext() { dispose(); }
